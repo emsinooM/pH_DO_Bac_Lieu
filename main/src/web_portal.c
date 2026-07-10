@@ -248,6 +248,9 @@ static const char *portal_html =
     "100%);}"
     ".btn-clear-tare:hover:not(:disabled){background:linear-gradient(135deg, "
     "#dc2626 0%, #b91c1c 100%);box-shadow:0 6px 12px rgba(239,68,68,0.3);}"
+    ".btn-high{background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%);}"
+    ".btn-high:hover:not(:disabled){background:linear-gradient(135deg, #d97706 "
+    "0%, #b45309 100%);box-shadow:0 6px 12px rgba(245,158,11,0.3);}"
     "#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) "
     "translateY(100px);background:rgba(15,23,42,0.9);color:#fff;padding:12px "
     "24px;border-radius:50px;box-shadow:0 10px 25px -5px "
@@ -415,19 +418,34 @@ static const char *portal_html =
     "style='font-weight:bold;color:#10b981;'>25.0 °C</span> | Điện áp: <span "
     "id='ctrl_vprobe' style='font-weight:bold;'>0.00 mV</span></span>"
     "        </div>"
-    "        <div style='display:grid;grid-template-columns:1fr 1fr;gap:16px;'>"
-    "          <button id='btn_cal_7' class='btn-ctrl btn-zero' "
-    "onclick='controlScale(\"CAL_7\")'>Hiệu chuẩn pH 7.00</button>"
-    "          <button id='btn_cal_4' class='btn-ctrl btn-tare' "
-    "onclick='controlScale(\"CAL_4\")'>Hiệu chuẩn pH 4.01</button>"
-    "        </div>"
-    "        <div "
-    "style='margin-top:16px;font-size:13px;color:var(--text-muted);text-align:"
-    "left;'>"
-    "          <strong>Hướng dẫn:</strong> Nhúng đầu dò vào dung dịch chuẩn "
-    "tương ứng (pH 7.00 hoặc pH 4.01), đợi trị số ổn định rồi nhấn nút hiệu "
-    "chuẩn tương ứng."
-    "        </div>"
+    "        <label style='margin-bottom:8px;display:block;'>Phương pháp hiệu chuẩn</label>"
+        "        <select id='cal_mode' onchange='changeCalMode()' style='width:100%;margin-bottom:16px;padding:10px;border-radius:8px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);'>"
+        "          <option value='2pt'>Hiệu chuẩn 2 điểm (4.00, 7.00)</option>"
+        "          <option value='3pt_g1'>Hiệu chuẩn 3 điểm - Nhóm 1 (4.00, 6.86, 9.18)</option>"
+        "          <option value='3pt_g2'>Hiệu chuẩn 3 điểm - Nhóm 2 (4.00, 7.00, 10.00)</option>"
+        "        </select>"
+        "        <div id='cal_buttons_2pt' class='cal-group' style='display:grid;grid-template-columns:1fr 1fr;gap:16px;'>"
+        "          <button id='btn_cal_7' class='btn-ctrl btn-zero' onclick='controlScale(\"CAL_7\", this)'>Hiệu chuẩn pH 7.00</button>"
+        "          <button id='btn_cal_4' class='btn-ctrl btn-tare' onclick='controlScale(\"CAL_4\", this)'>Hiệu chuẩn pH 4.00</button>"
+        "        </div>"
+        "        <div id='cal_buttons_3pt_g1' class='cal-group' style='display:none;grid-template-columns:1fr 1fr 1fr;gap:12px;'>"
+        "          <button id='btn_cal_4_3pt_g1' class='btn-ctrl btn-tare' onclick='controlScale(\"CAL_4_3PT\", this)'>pH 4.00 (3D)</button>"
+        "          <button id='btn_cal_686_3pt' class='btn-ctrl btn-zero' onclick='controlScale(\"CAL_686_3PT\", this)'>pH 6.86 (3D)</button>"
+        "          <button id='btn_cal_918_3pt' class='btn-ctrl btn-high' onclick='controlScale(\"CAL_918_3PT\", this)'>pH 9.18 (3D)</button>"
+        "        </div>"
+        "        <div id='cal_buttons_3pt_g2' class='cal-group' style='display:none;grid-template-columns:1fr 1fr 1fr;gap:12px;'>"
+        "          <button id='btn_cal_4_3pt_g2' class='btn-ctrl btn-tare' onclick='controlScale(\"CAL_4_3PT\", this)'>pH 4.00 (3D)</button>"
+        "          <button id='btn_cal_7_3pt' class='btn-ctrl btn-zero' onclick='controlScale(\"CAL_7_3PT\", this)'>pH 7.00 (3D)</button>"
+        "          <button id='btn_cal_10_3pt' class='btn-ctrl btn-high' onclick='controlScale(\"CAL_10_3PT\", this)'>pH 10.00 (3D)</button>"
+        "        </div>"
+        "        <div style='margin-top:16px;font-size:13px;color:var(--text-muted);text-align:left;line-height:1.4;'>"
+        "          <strong>Hướng dẫn:</strong> Chọn phương pháp hiệu chuẩn mong muốn. Nhúng đầu dò vào dung dịch chuẩn tương ứng, đợi trị số ổn định rồi nhấn nút hiệu chuẩn cho mốc đó."
+        "        </div>"
+        "        <hr style='border-top:1px dashed var(--border);margin:20px 0;border-bottom:none;'>"
+        "        <div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;'>"
+        "          <span style='font-size:13px;color:var(--text-muted);text-align:left;'>Khôi phục các mốc hiệu chuẩn pH về giá trị mặc định của nhà máy.</span>"
+        "          <button id='btn_reset_ph_sensor' class='btn-danger btn-ctrl' onclick='resetPHSensor()' style='width:auto;padding:10px 20px;font-size:13px;margin:0;'>Reset Sensor</button>"
+        "        </div>"
     "      </div>"
     "      <div class='card'>"
     "        <div class='section-title'>⚙️ Bộ lọc kỹ thuật số (Digital Filter)</div>"
@@ -518,7 +536,7 @@ static const char *portal_html =
     "      <div class='card'>"
     "        <div class='section-title'>📶 WiFi Configuration</div>"
     "        <label>Available Networks</label>"
-    "        <select id=''><option value=''>Scanning...</option></select>"
+    "        <select id='ssid'><option value=''>Scanning...</option></select>"
     "        <label>Hidden  (Optional)</label>"
     "        <input id='ssid_manual' placeholder='Enter hidden SSID'/>"
     "        <label>Password</label>"
@@ -747,26 +765,42 @@ static const char *portal_html =
     "t.className='show '+(isSuccess?'success':'error');"
     "setTimeout(()=>t.className='',1000);"
     "}"
-    "function controlScale(act){"
-    "const btn=document.getElementById('btn_'+act.toLowerCase());"
-    "const bZ=document.getElementById('btn_cal_7');"
-    "const bT=document.getElementById('btn_cal_4');"
-    "if(bZ) bZ.disabled=true;"
-    "if(bT) bT.disabled=true;"
+    "function changeCalMode(){"
+    "const m=document.getElementById('cal_mode').value;"
+    "document.querySelectorAll('.cal-group').forEach(el=>el.style.display='none');"
+    "if(m==='2pt')document.getElementById('cal_buttons_2pt').style.display='grid';"
+    "else if(m==='3pt_g1')document.getElementById('cal_buttons_3pt_g1').style.display='grid';"
+    "else if(m==='3pt_g2')document.getElementById('cal_buttons_3pt_g2').style.display='grid';"
+    "}"
+    "function controlScale(act,btn){"
+    "const btns=document.querySelectorAll('#tab-scale button.btn-ctrl');"
+    "btns.forEach(b=>b.disabled=true);"
     "const ot=btn?btn.innerText:'Processing';"
     "if(btn) btn.innerText='Processing...';"
-    "fetch('/api/"
-    "scale_control',{method:'POST',headers:{'Content-Type':'application/"
-    "json'},body:JSON.stringify({action:act})})"
+    "fetch('/api/scale_control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:act})})"
     ".then(r=>r.json()).then(d=>{"
     "showToast(d.message,d.success);"
     "updateDashboard();"
     "}).catch(()=>showToast('Failed to connect to device',false))"
     ".finally(()=>{"
-    "if(bZ) bZ.disabled=false;"
-    "if(bT) bT.disabled=false;"
+    "btns.forEach(b=>b.disabled=false);"
     "if(btn) btn.innerText=ot;"
     "});"
+    "}"
+    "function resetPHSensor(){"
+    "if(!confirm('Cảnh báo: Lệnh này sẽ xóa toàn bộ các mốc hiệu chuẩn pH đã lưu. Bạn có chắc chắn muốn khôi phục cài đặt gốc?')) return;"
+    "const btn=document.getElementById('btn_reset_ph_sensor');"
+    "setLoading(btn,true,'Resetting...');"
+    "fetch('/api/scale_control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'RESET_PH_SENSOR'})})"
+    ".then(r=>r.json()).then(d=>{"
+    "if(d.success){"
+    "alert('Đã khôi phục cài đặt gốc cảm biến pH thành công!');"
+    "}else{"
+    "showToast(d.message,false);"
+    "}"
+    "updateDashboard();"
+    "}).catch(()=>showToast('Không thể kết nối đến thiết bị',false))"
+    ".finally(()=>setLoading(btn,false));"
     "}"
     "function controlDO(act){"
     "const btn=document.getElementById('btn_'+act.toLowerCase());"
@@ -1043,7 +1077,7 @@ static const char *portal_html =
     "html+='<div><strong>• pH (ATC):</strong> <span "
     "style=\"font-weight:bold;color:#3b82f6;\">'+(phVal!==undefined?Number("
     "phVal).toFixed(2):'N/A')+'</span></div>';"
-    "html+='<div><strong>• Temp (DO):</strong> <span "
+    "html+='<div><strong>• Temperature:</strong> <span "
     "style=\"font-weight:bold;color:#10b981;\">'+(sd.temp!==undefined?Number("
     "sd.temp).toFixed(1):'N/A')+' °C</span></div>';"
     "html+='<div><strong>• Valid:</strong> "
@@ -1056,6 +1090,9 @@ static const char *portal_html =
     "html+='<div><strong>• Độ bão hòa DO:</strong> <span "
     "style=\"font-weight:bold;color:#a855f7;\">'+(sd.do_sat!==undefined?Number("
     "sd.do_sat).toFixed(1)+'%':'N/A')+'</span></div>';"
+    "html+='<div><strong>• Nhiệt độ DO:</strong> <span "
+    "style=\"font-weight:bold;color:#eab308;\">'+(sd.do_temp!==undefined?"
+    "Number(sd.do_temp).toFixed(1)+' °C':'N/A')+'</span></div>';"
     "html+='<div><strong>• DO Valid:</strong> "
     "<span>'+(sd.do_valid!==undefined?(sd.do_valid?\"Yes\":\"No\"):\"N/A\")+'</"
     "span></div>';"
@@ -1187,6 +1224,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
   if (err != ESP_OK) {
     ESP_LOGE(PORTAL_TAG, "Scan start failed: %s", esp_err_to_name(err));
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "scan failed");
+    wifi_config_manager_finish_scan();
     return ESP_FAIL;
   }
 
@@ -1195,10 +1233,12 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
   wifi_ap_record_t *ap_records = calloc(ap_num, sizeof(wifi_ap_record_t));
   if (ap_records == NULL) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no mem");
+    wifi_config_manager_finish_scan();
     return ESP_FAIL;
   }
 
   ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_num, ap_records));
+  wifi_config_manager_finish_scan();
 
   cJSON *arr = cJSON_CreateArray();
   for (uint16_t i = 0; i < ap_num; i++) {
@@ -1596,11 +1636,64 @@ static esp_err_t scale_control_post_handler(httpd_req_t *req) {
   } else if (strcmp(action->valuestring, "CAL_4") == 0) {
     bool ok = Calibrate_PH_Point(4.00f, status.v_probe_mv, status.temperature, 2);
     if (ok) {
-      status_msg = "Hiệu chuẩn pH 4.01 thành công!";
+      status_msg = "Hiệu chuẩn pH 4.00 thành công!";
       success = true;
     } else {
-      status_msg = "Hiệu chuẩn pH 4.01 thất bại! Vui lòng kiểm tra lại điện áp "
+      status_msg = "Hiệu chuẩn pH 4.00 thất bại! Vui lòng kiểm tra lại điện áp "
                    "điện cực.";
+    }
+  } else if (strcmp(action->valuestring, "CAL_4_3PT") == 0) {
+    bool ok = Calibrate_PH_Point(4.00f, status.v_probe_mv, status.temperature, 3);
+    if (ok) {
+      status_msg = "Hiệu chuẩn pH 4.00 (3 điểm) thành công!";
+      success = true;
+    } else {
+      status_msg = "Hiệu chuẩn pH 4.00 (3 điểm) thất bại! Vui lòng kiểm tra lại điện áp "
+                   "điện cực.";
+    }
+  } else if (strcmp(action->valuestring, "CAL_686_3PT") == 0) {
+    bool ok = Calibrate_PH_Point(6.86f, status.v_probe_mv, status.temperature, 3);
+    if (ok) {
+      status_msg = "Hiệu chuẩn pH 6.86 (3 điểm) thành công!";
+      success = true;
+    } else {
+      status_msg = "Hiệu chuẩn pH 6.86 (3 điểm) thất bại! Vui lòng kiểm tra lại điện áp "
+                   "điện cực.";
+    }
+  } else if (strcmp(action->valuestring, "CAL_918_3PT") == 0) {
+    bool ok = Calibrate_PH_Point(9.18f, status.v_probe_mv, status.temperature, 3);
+    if (ok) {
+      status_msg = "Hiệu chuẩn pH 9.18 (3 điểm) thành công!";
+      success = true;
+    } else {
+      status_msg = "Hiệu chuẩn pH 9.18 (3 điểm) thất bại! Vui lòng kiểm tra lại điện áp "
+                   "điện cực.";
+    }
+  } else if (strcmp(action->valuestring, "CAL_7_3PT") == 0) {
+    bool ok = Calibrate_PH_Point(7.00f, status.v_probe_mv, status.temperature, 3);
+    if (ok) {
+      status_msg = "Hiệu chuẩn pH 7.00 (3 điểm) thành công!";
+      success = true;
+    } else {
+      status_msg = "Hiệu chuẩn pH 7.00 (3 điểm) thất bại! Vui lòng kiểm tra lại điện áp "
+                   "điện cực.";
+    }
+  } else if (strcmp(action->valuestring, "CAL_10_3PT") == 0) {
+    bool ok = Calibrate_PH_Point(10.00f, status.v_probe_mv, status.temperature, 3);
+    if (ok) {
+      status_msg = "Hiệu chuẩn pH 10.00 (3 điểm) thành công!";
+      success = true;
+    } else {
+      status_msg = "Hiệu chuẩn pH 10.00 (3 điểm) thất bại! Vui lòng kiểm tra lại điện áp "
+                   "điện cực.";
+    }
+  } else if (strcmp(action->valuestring, "RESET_PH_SENSOR") == 0) {
+    bool ok = Reset_PH_Calibration();
+    if (ok) {
+      status_msg = "Khôi phục cấu hình hiệu chuẩn pH về mặc định thành công!";
+      success = true;
+    } else {
+      status_msg = "Khôi phục cấu hình hiệu chuẩn pH thất bại!";
     }
   } else if (strcmp(action->valuestring, "SET_FILTER") == 0) {
     const cJSON *level = cJSON_GetObjectItem(root, "level");

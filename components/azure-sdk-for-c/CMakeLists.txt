@@ -27,12 +27,8 @@
 #     SRCS ${COMPONENT_SOURCES}
 #     INCLUDE_DIRS ${COMPONENT_INCLUDE_DIRS})
 
-set(ROOT_PATH
-    ${CMAKE_CURRENT_LIST_DIR}/../../..
-)
-
 set(AZURE_IOT_MIDDLEWARE_FREERTOS
-    ${ROOT_PATH}/iot-middleware-freertos-samples/libs/azure-iot-middleware-freertos
+    ${CMAKE_CURRENT_LIST_DIR}/../libs/azure-iot-middleware-freertos
 )
 
 set(AZURE_SDK_FOR_C_PATH

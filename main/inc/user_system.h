@@ -32,6 +32,9 @@
 #define CMD_CODE_GET_PH                     503
 #define CMD_CODE_PH_CALIBRATE               504
 #define CMD_CODE_SET_DEVICE_CONFIG          505
+#define CMD_CODE_DO_CALIBRATE               506
+#define CMD_CODE_REBOOT                     507
+
 
 
 #define VERSION "1.0.2"

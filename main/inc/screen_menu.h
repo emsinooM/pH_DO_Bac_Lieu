@@ -15,19 +15,9 @@
  *                          │   ├─ 1.1 Language → ENGLISH
  *                          │   ├─ 1.2 Date → Day Format | Day Settings
  *                          │   └─ 1.3 History Mode
- *                          ├─ 2 Sensor Settings
- *                          │   ├─ 2.1 Display Mode
- *                          │   ├─ 2.2 Calibration → Cal.2pt | Cal.3pt
- *                          │   ├─ 2.3 Digital Filter → L | M | H
- *                          │   ├─ 2.4 Temp Mode → ATC°C|MTC°C|ATF°F|MTF°F
- *                          │   ├─ 2.5 Temp Settings
- *                          │   └─ 2.6 Temp Lin COMP
- *                          └─ 3 Output Settings
- *                              ├─ 3.1 Relay-1 → Mode | SP | Hys
- *                              ├─ 3.2 Relay-2 → Mode | SP | Hys
- *                              ├─ 3.3 Relay-3 → Mode | SP | Hys
- *                              ├─ 3.4 Current-1 → Mode|Set4ma|Set20ma|Cal4ma|Cal20ma
- *                              └─ 3.5 ModBus RTU → Addr|Baud|Parity|StopBits
+ *                          ├─ 2 Display Settings → pH|DO|Dual + Number|Chart
+ *                          ├─ 3 Modbus Settings
+ *                          └─ 4 Sensor Settings → Cal | Filter | Temp
  */
 
 #ifndef MENU_H
@@ -72,6 +62,17 @@ typedef enum {
 extern display_mode_t g_display_mode;
 
 /* =====================================================================
+ * Kieu hien thi man hinh do (so hoac bieu do)
+ * ===================================================================== */
+typedef enum {
+    DISP_VIEW_NUMBER = 0,
+    DISP_VIEW_CHART,
+    DISP_VIEW_COUNT
+} display_view_t;
+
+extern display_view_t g_display_view;
+
+/* =====================================================================
  * Chân GPIO nút bấm
  * ===================================================================== */
 #define BTN_PIN_ESC     13    /**< ESC   – quay lại */
@@ -114,6 +115,7 @@ typedef enum {
     PAGE_CAL_DO,
     PAGE_CAL_DO_EXEC,
     PAGE_CAL_DO_TEMP,
+    PAGE_RESET_SENSOR,
     PAGE_DIGITAL_FILTER,
     PAGE_TEMP_MODE,
     PAGE_TEMP_SETTINGS,
@@ -139,6 +141,7 @@ typedef struct {
     uint8_t     selected;       /**< Chỉ số mục đang được chọn     */
     uint8_t     scroll_offset;  /**< Chỉ số mục đầu tiên hiển thị  */
     bool        in_menu;        /**< false = màn hình đo lường      */
+    bool        in_pin_entry;   /**< true = dang nhap mat khau menu 3/4 */
 } menu_state_t;
 
 extern menu_state_t g_menu;

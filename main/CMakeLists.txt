@@ -37,4 +37,5 @@ idf_component_register(SRCS "src/cs1237.c"
                                 esp_https_ota
                                 app_update
                                 esp_http_server
+                                mdns
                     )

@@ -16,7 +16,9 @@
 #include "user_system.h"
 #include "user_time.h"
 #include "wifi_config_manager.h"
+#include <stdlib.h>
 #include <sys/time.h>
+#include <time.h>
 
 static const char *TAG = "PH_TEMP_SYSTEM";
 
@@ -150,6 +152,11 @@ static void system_startup_task(void *pvParameters) {
 void app_main(void) {
   init_system_gpios();
 
+  /* Fix mui gio ngay tu dau (UTC+7 = "UTC-7" theo POSIX), khong phu thuoc RTC.
+   * Neu khong, khi RTC loi/dung thi TZ chua duoc set -> dong ho hien sai UTC. */
+  setenv("TZ", "UTC-7", 1);
+  tzset();
+
   init_moving_average(&temp_filter);
   init_moving_average(&ph_filter);
 
@@ -228,7 +235,7 @@ void app_main(void) {
   do_cfg.stop_bits = (g_mb2_stop == 2) ? UART_STOP_BITS_2 : UART_STOP_BITS_1;
   do_cfg.rs485_mode = DO_SENSOR_RS485_MANUAL_DE;
   do_cfg.poll_interval_ms = 500;
-  do_cfg.debug = true;
+  do_cfg.debug = false;
 
   ESP_LOGI(TAG, "Doc DO moi %lu giay/lan",
            (unsigned long)do_cfg.poll_interval_ms / 1000);

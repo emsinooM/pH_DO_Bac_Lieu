@@ -24,6 +24,8 @@ bool azure_config_manager_save(const char *host, const char *dev, const char *sy
 bool azure_config_manager_clear(void);
 void wifi_config_manager_schedule_connect(void);
 void wifi_config_manager_prepare_scan(void);
+void wifi_config_manager_finish_scan(void);
+
 
 /* --- Shared Secret Authentication --- */
 #define AUTH_SECRET_DEFAULT  "SecretKey"
