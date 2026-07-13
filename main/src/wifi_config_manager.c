@@ -11,7 +11,6 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "user_system.h"
-#include "tcp_server_com.h"
 #include "esp_mac.h"
 #include "esp_http_server.h"
 #include "mdns.h"
@@ -320,13 +319,6 @@ bool wifi_config_manager_save(const char *ssid, const char *pass)
 
     if (err != ESP_OK) return false;
 
-    memset(TCP_Handle.ssid, 0, sizeof(TCP_Handle.ssid));
-    memset(TCP_Handle.pass, 0, sizeof(TCP_Handle.pass));
-    strncpy(TCP_Handle.ssid, ssid, sizeof(TCP_Handle.ssid) - 1);
-    if (pass != NULL) {
-        strncpy(TCP_Handle.pass, pass, sizeof(TCP_Handle.pass) - 1);
-    }
-
     strncpy(s_pending_ssid, ssid, sizeof(s_pending_ssid) - 1);
     if (pass != NULL) {
         strncpy(s_pending_pass, pass, sizeof(s_pending_pass) - 1);
@@ -524,8 +516,6 @@ bool wifi_config_manager_init(void)
 
     if(has_saved)
     {
-        strncpy(TCP_Handle.ssid, ssid, sizeof(TCP_Handle.ssid) - 1);
-        strncpy(TCP_Handle.pass, pass, sizeof(TCP_Handle.pass) - 1);
         prv_wifi_connect(ssid, pass);
         ESP_LOGI(WIFI_CFG_TAG, "Saved WiFi found, AP+STA enabled");
     }

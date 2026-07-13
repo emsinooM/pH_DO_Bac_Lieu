@@ -11,6 +11,8 @@
 #define FILTER_H_SIZE 40    // 20s = 40 samples
 #define MAX_FILTER_SIZE FILTER_H_SIZE
 
+#define MEDIAN_FILTER_SIZE 5
+
 typedef enum {
     FILTER_LEVEL_L = 0,     // Low (5s)
     FILTER_LEVEL_M,         // Middle (10s)
@@ -29,12 +31,24 @@ typedef struct {
     uint16_t size;           // Kích thước lọc thực tế
 } MovingAverage_t;
 
+typedef struct {
+    int32_t buffer[MEDIAN_FILTER_SIZE];
+    uint8_t index;
+    uint8_t count;
+    SemaphoreHandle_t mutex;
+} MedianFilter_t;
+
 extern MovingAverage_t ph_filter;
 extern MovingAverage_t temp_filter;
+extern MedianFilter_t ph_median_filter;
+extern MedianFilter_t temp_median_filter;
 
 void init_moving_average(MovingAverage_t *filter);
 int32_t apply_moving_average(MovingAverage_t *filter, int32_t new_val);
 void set_moving_average_size(MovingAverage_t *filter, uint16_t new_size);
 void update_system_filters_level(filter_level_t level);
+
+void init_median_filter(MedianFilter_t *filter, int32_t initial_val);
+int32_t apply_median_filter(MedianFilter_t *filter, int32_t new_val);
 
 #endif // FILTER_H

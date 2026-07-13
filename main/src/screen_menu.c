@@ -25,6 +25,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -931,6 +932,33 @@ static void poll_and_debounce_buttons(void)
         } else {
             s_btn_debounce_counter[i] = 0;
         }
+    }
+
+    // Nhấn giữ nút ENTER trong 7 giây để reset hệ thống bằng phần mềm
+    static TickType_t s_enter_press_start_tick = 0;
+    static bool s_enter_was_pressed = false;
+
+    if (s_btn_state[BTN_IDX_ENTER]) {
+        if (!s_enter_was_pressed) {
+            s_enter_press_start_tick = xTaskGetTickCount();
+            s_enter_was_pressed = true;
+        } else {
+            TickType_t elapsed = xTaskGetTickCount() - s_enter_press_start_tick;
+            if (elapsed >= pdMS_TO_TICKS(7000)) {
+                ESP_LOGW(TAG_MENU, "ENTER button held for 7s. Restarting system...");
+                LCD_Clear();
+                if (g_sys_lang == LANG_VI) {
+                    LCD_DrawString(4, 28, "DANG KHOI DONG LAI...", LCD_COLOR_ON);
+                } else {
+                    LCD_DrawString(8, 28, "REBOOTING SYSTEM...", LCD_COLOR_ON);
+                }
+                LCD_Flush();
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+            }
+        }
+    } else {
+        s_enter_was_pressed = false;
     }
 }
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "tcp_server_com.h"
-
 #include "stdint.h"
 #include "stdbool.h"
 #include "time.h"
