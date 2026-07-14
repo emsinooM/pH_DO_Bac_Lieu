@@ -10,7 +10,7 @@
 #define TEMP_DATA_PIN GPIO_NUM_8
 #define TEMP_SCLK_PIN GPIO_NUM_19
 
-#define CS1237_CFG_40HZ_PGA1_CHA 0x50
+#define CS1237_CFG_40HZ_PGA1_CHA 0x10
 #define CS1237_CMD_WRITE_REG 0x65
 
 // Khởi tạo các chân GPIO cho hệ thống CS1237

@@ -16,7 +16,9 @@
 #include "user_system.h"
 #include "user_time.h"
 #include "wifi_config_manager.h"
+#include <stdlib.h>
 #include <sys/time.h>
+#include <time.h>
 
 static const char *TAG = "PH_TEMP_SYSTEM";
 
@@ -149,6 +151,11 @@ static void system_startup_task(void *pvParameters) {
 
 void app_main(void) {
   init_system_gpios();
+
+  /* Fix mui gio ngay tu dau (UTC+7 = "UTC-7" theo POSIX), khong phu thuoc RTC.
+   * Neu khong, khi RTC loi/dung thi TZ chua duoc set -> dong ho hien sai UTC. */
+  setenv("TZ", "UTC-7", 1);
+  tzset();
 
   init_moving_average(&temp_filter);
   init_moving_average(&ph_filter);

@@ -264,6 +264,10 @@ void LCD_DrawLargeString(uint8_t x, uint8_t y, const char *str, uint8_t color);
  */
 uint8_t LCD_GetLargeStringWidth(const char *str);
 
+uint8_t LCD_DrawMediumChar(uint8_t x, uint8_t y, char c, uint8_t color);
+void LCD_DrawMediumString(uint8_t x, uint8_t y, const char *str, uint8_t color);
+uint8_t LCD_GetMediumStringWidth(const char *str);
+
 /* =====================================================================
  * API – FreeRTOS Task
  * ===================================================================== */

@@ -6,8 +6,8 @@
 
 // Hằng số dùng chung cho tính toán pH & Nhiệt độ
 // Định nghĩa lại 2 mốc điện áp riêng biệt
-#define V_REF_ADC       2.048f  // <-- THAY BẰNG ÁP VDD BẠN ĐO ĐƯỢC TẠI CHÂN 7
-#define V_REF_BRIDGE    2.048f
+#define V_REF_ADC       1.995f  // <-- THAY BẰNG ÁP VDD BẠN ĐO ĐƯỢC TẠI CHÂN 7
+#define V_REF_BRIDGE    1.995f
 #define V_PH_REF_ACTUAL 2.201f  // Giá trị thực tế tại chân ph_REFM
 // #define V_REF           1.25f
 #define PGA             1.0f
@@ -18,7 +18,7 @@
 #define NTC_NOMINAL_RESISTANCE      10000.0f
 #define NTC_BETA                    3950.0f
 
-#define R_CALIB 750.0f
+#define R_CALIB 725.0f
 
 // --- Cấu trúc dữ liệu Hiệu chuẩn pH 2 điểm và 3 điểm nâng cao ---
 typedef struct {

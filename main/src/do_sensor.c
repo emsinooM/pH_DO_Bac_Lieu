@@ -1,4 +1,4 @@
-#include "do_sensor.h"
+R4T#include "do_sensor.h"
 #include "esp_err.h"
 #include "ph_temp.h"
 #include "esp_rom_sys.h"
@@ -35,7 +35,7 @@ void do_sensor_load_settings(void) {
     if (Nvs_Read_Number("mb1_parity", &val)) g_mb1_parity = (uint8_t)val;
     if (Nvs_Read_Number("mb1_stop", &val)) g_mb1_stop = (uint8_t)val;
 
-    if (Nvs_Read_Number("mb2_addr", &val)) g_mb2_addr = (uint8_t)val;
+    if (Nvs_Read_Number("mb2_addr", &val)) g_mb2_addr = (uint8_t)val;=
     if (Nvs_Read_Number("mb2_baud", &val)) g_mb2_baud = val;
     if (Nvs_Read_Number("mb2_parity", &val)) g_mb2_parity = (uint8_t)val;
     if (Nvs_Read_Number("mb2_stop", &val)) g_mb2_stop = (uint8_t)val;

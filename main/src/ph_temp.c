@@ -84,15 +84,8 @@ float calculate_temperature(int32_t raw_adc, bool is_pt1000) {
     if (is_pt1000) {
         float ratio = V_REF_BRIDGE  / v_diff;
         if (ratio < 1.0f) ratio = 1.0f; // Tránh điện trở âm bất thường
-        // 1. Đây là điện trở lỗi (bị gặm dòng) mà mạch đang tính ra (~1068 Ohm)
-        // float r_measured = R_CALIB * (ratio - 1.0f);
-        // float r_pt1000 = (30690.0f * r_measured) / (30690.0f - r_measured);
-
         float r_pt1000 = R_CALIB * (ratio - 1.0f);
-
-    
-    // 3. Đổi ra nhiệt độ chuẩn
-    return (r_pt1000 - 1000.0f) / 3.9083f;
+        return (r_pt1000 - 1000.0f) / 3.9083f;
     } else {
         float v_ntc = V_REF_BRIDGE  + v_diff;
         if (v_ntc <= 0.0f) v_ntc = 1e-6f;

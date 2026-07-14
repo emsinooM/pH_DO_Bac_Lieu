@@ -141,4 +141,3 @@ Once connected to the internet, a dedicated telemetry task connects to **Azure I
 ### 5.3 Storage Architecture
 - **NVS (Non-Volatile Storage)**: Stores volatile Wi-Fi credentials, serial port settings (baud, parity, slave IDs), temperature mode configurations, and calibration curves.
 - **FRAM (Ferroelectric RAM)**: Integrates an external I2C FRAM chip for fast, cyclic, non-volatile storage of schedules, alarm triggers, and runtime diagnostics without flash wearing.
-# pH_DO_Bac_Lieu

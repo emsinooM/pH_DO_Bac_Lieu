@@ -844,11 +844,11 @@ static void Azure_Telemetry_Task(void *pvParameters)
                     "\"Code\":504,"
                     "\"TimeStamp\":%lld,"
                     "\"SensorData\":{"
-                        "\"pH\":%.2f,"
-                        // "\"temp\":%.2f,"
+                        "\"ph\":%.2f,"
+                        "\"temp\":%.2f,"
                         "\"Valid\":%s,"
                         "\"do\":%.2f,"
-                        "\"temp\":%.2f,"
+                        "\"do_temp\":%.2f,"
                         "\"do_sat\":%.2f,"
                         "\"do_valid\":%s"
                     "}"
@@ -857,7 +857,7 @@ static void Azure_Telemetry_Task(void *pvParameters)
                 IoTHubHandle.deviceId,
                 (long long)Sys_Info.epochtime,
                 (double)status.ph,
-                // (double)status.temperature,
+                (double)status.temperature,
                 status.is_calibrated ? "true" : "false",
                 (double)status.do_mg_l,
                 (double)status.do_temp_c,
