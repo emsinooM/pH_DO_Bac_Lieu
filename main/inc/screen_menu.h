@@ -75,11 +75,11 @@ extern display_view_t g_display_view;
 /* =====================================================================
  * Chân GPIO nút bấm
  * ===================================================================== */
-#define BTN_PIN_ESC     13    /**< ESC   – quay lại */
-#define BTN_PIN_DOWN    14    /**< DOWN  – xuống              */
-#define BTN_PIN_UP      21    /**< UP    – lên                */
-#define BTN_PIN_RIGHT   47    /**< RIGHT – dự phòng           */
-#define BTN_PIN_ENTER   48    /**< ENTER – xác nhận           */
+#define BTN_PIN_DOWN  13    /**< ESC   – quay lại */
+#define BTN_PIN_UP    14    /**< DOWN  – xuống              */
+#define BTN_PIN_RIGHT 21    /**< UP    – lên                */
+#define BTN_PIN_ESC   47    /**< RIGHT – dự phòng           */
+#define BTN_PIN_ENTER 48    /**< ENTER – xác nhận           */
 
 /* =====================================================================
  * ID trang menu
@@ -106,6 +106,8 @@ typedef enum {
     PAGE_SCREEN_RES_RATIO,
 
     /* Level 3 – Sensor Settings */
+    PAGE_PH_SETTINGS,
+    PAGE_DO_SETTINGS,
     PAGE_CALIBRATION,
     PAGE_CAL_2PT,
     PAGE_CAL_3PT,

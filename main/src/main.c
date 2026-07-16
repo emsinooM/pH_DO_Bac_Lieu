@@ -70,6 +70,9 @@ static void ph_temp_sensor_task(void *pvParameters) {
         temp_med = apply_median_filter(&temp_median_filter, temp_raw);
         temp_filtered = apply_moving_average(&temp_filter, temp_med);
         current_temp = calculate_temperature(temp_filtered, true) + g_temp_offset; // true = PT1000
+        if (current_temp < -40.0f || current_temp > 150.0f) {
+            current_temp = 25.0f; // Khôi phục 25C nếu đầu dò bị ngắt hoặc đo bất thường
+        }
     }
 
     // 2. KÊNH pH
@@ -86,6 +89,25 @@ static void ph_temp_sensor_task(void *pvParameters) {
     float v_probe_mv = 0;
     float current_ph = calculate_ph_with_atc_calibrated(
         &ph_cal, ph_filtered, current_temp, &v_probe_mv);
+
+    // =========================================================================
+    // CODE MÔ PHỎNG SENSOR (TỰ ĐỘNG THAY ĐỔI 5 GIÁ TRỊ)
+    // Để chuyển sang chạy thực tế: Đổi '#if 1' bên dưới thành '#if 0' hoặc comment lại toàn bộ khối này
+    // =========================================================================
+#if 0
+    static const float s_sim_values[5] = {12.34f, 5.67f, 8.90f, 0.12f, 3.45f};
+    static size_t s_sim_ph_idx = 0;
+    static size_t s_sim_temp_idx = 0;
+
+    // Mô phỏng pH hiển thị lần lượt 5 giá trị
+    current_ph = s_sim_values[s_sim_ph_idx];
+    s_sim_ph_idx = (s_sim_ph_idx + 1) % 5;
+
+    // Mô phỏng Nhiệt độ hiển thị lần lượt 5 giá trị tương tự
+    current_temp = s_sim_values[s_sim_temp_idx];
+    s_sim_temp_idx = (s_sim_temp_idx + 1) % 5;
+#endif
+    // =========================================================================
 
     // 3. IN KẾT QUẢ
     static uint32_t last_ph_log_time = 0;

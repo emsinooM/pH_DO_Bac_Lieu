@@ -32,6 +32,7 @@
 #define CMD_CODE_SET_DEVICE_CONFIG          505
 #define CMD_CODE_DO_CALIBRATE               506
 #define CMD_CODE_REBOOT                     507
+#define CMD_CODE_GET_FULL_TELEMETRY         508
 
 
 

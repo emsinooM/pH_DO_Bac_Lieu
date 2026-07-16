@@ -15,7 +15,7 @@ typedef struct {
 
 typedef struct {
     uint8_t width;
-    uint16_t bitmap[15];
+    uint16_t bitmap[17];
 } medium_font_char_t;
 
 // Char mapping: '0'-'9' (0-9), '.' (10), 'p' (11), 'H' (12), 'C' (13), 'F' (14), '-' (15)
