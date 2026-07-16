@@ -4,6 +4,9 @@
 
 filter_level_t g_filter_level = FILTER_LEVEL_L;
 
+MedianFilter_t ph_median_filter = {0};
+MedianFilter_t temp_median_filter = {0};
+
 // Hàm khởi tạo bộ lọc và Mutex
 void init_moving_average(MovingAverage_t *filter) {
     filter->size = FILTER_L_SIZE; // Mặc định là 5s (10 mẫu)
@@ -93,4 +96,63 @@ void update_system_filters_level(filter_level_t level) {
 
     set_moving_average_size(&ph_filter, size);
     set_moving_average_size(&temp_filter, size);
+}
+
+void init_median_filter(MedianFilter_t *filter, int32_t initial_val) {
+    if (filter->mutex == NULL) {
+        filter->mutex = xSemaphoreCreateMutex();
+    }
+
+    if (filter->mutex != NULL) {
+        xSemaphoreTake(filter->mutex, portMAX_DELAY);
+    }
+
+    filter->index = 0;
+    filter->count = MEDIAN_FILTER_SIZE;
+    for (int i = 0; i < MEDIAN_FILTER_SIZE; i++) {
+        filter->buffer[i] = initial_val;
+    }
+
+    if (filter->mutex != NULL) {
+        xSemaphoreGive(filter->mutex);
+    }
+}
+
+int32_t apply_median_filter(MedianFilter_t *filter, int32_t new_val) {
+    int32_t median = new_val;
+
+    if (filter->mutex != NULL) {
+        xSemaphoreTake(filter->mutex, portMAX_DELAY);
+    }
+
+    filter->buffer[filter->index] = new_val;
+    filter->index = (filter->index + 1) % MEDIAN_FILTER_SIZE;
+    if (filter->count < MEDIAN_FILTER_SIZE) {
+        filter->count++;
+    }
+
+    int32_t temp[MEDIAN_FILTER_SIZE];
+    int n = filter->count;
+    for (int i = 0; i < n; i++) {
+        temp[i] = filter->buffer[i];
+    }
+
+    // Sort using insertion sort
+    for (int i = 1; i < n; i++) {
+        int32_t key = temp[i];
+        int j = i - 1;
+        while (j >= 0 && temp[j] > key) {
+            temp[j + 1] = temp[j];
+            j = j - 1;
+        }
+        temp[j + 1] = key;
+    }
+
+    median = temp[n / 2];
+
+    if (filter->mutex != NULL) {
+        xSemaphoreGive(filter->mutex);
+    }
+
+    return median;
 }

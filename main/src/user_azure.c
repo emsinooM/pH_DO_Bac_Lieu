@@ -38,6 +38,10 @@
 #include "user_ota.h"
 #include "freertos/event_groups.h"
 #include "esp_system.h"
+#include "esp_wifi.h"     
+#include "esp_timer.h"  
+
+
 
 // #include "cJSON.h"
 #include "queue.h"
@@ -226,7 +230,16 @@ static void prvHandleCommand(AzureIoTHubClientCommandRequest_t *pxMessage,
         || prvMethodNameMatch(pxMessage, "GetPH")
         || prvMethodNameMatch(pxMessage, "CalibratePH7")
         || prvMethodNameMatch(pxMessage, "CalibratePH4")
-        || prvMethodNameMatch(pxMessage, "SetDeviceConfig"))
+        || prvMethodNameMatch(pxMessage, "CalibratePH686")
+        || prvMethodNameMatch(pxMessage, "CalibratePH918")
+        || prvMethodNameMatch(pxMessage, "CalibratePH10")
+        || prvMethodNameMatch(pxMessage, "CalibratePH")
+        || prvMethodNameMatch(pxMessage, "SetDeviceConfig")
+        || prvMethodNameMatch(pxMessage, "CalibrateDO")
+        || prvMethodNameMatch(pxMessage, "Reboot")
+        || prvMethodNameMatch(pxMessage, "GetFullTelemetry")
+        || prvMethodNameMatch(pxMessage, "GetTelemetry")
+    )
     {
         ESP_LOGI("AZURE: ", "Received direct method");
 
@@ -265,7 +278,23 @@ static void prvHandleCommand(AzureIoTHubClientCommandRequest_t *pxMessage,
                     code_method_mismatch = true;
                 else if (prvMethodNameMatch(pxMessage, "CalibratePH4") && payload_code != CMD_CODE_PH_CALIBRATE)
                     code_method_mismatch = true;
+                else if (prvMethodNameMatch(pxMessage, "CalibratePH686") && payload_code != CMD_CODE_PH_CALIBRATE)
+                    code_method_mismatch = true;
+                else if (prvMethodNameMatch(pxMessage, "CalibratePH918") && payload_code != CMD_CODE_PH_CALIBRATE)
+                    code_method_mismatch = true;
+                else if (prvMethodNameMatch(pxMessage, "CalibratePH10") && payload_code != CMD_CODE_PH_CALIBRATE)
+                    code_method_mismatch = true;
+                else if (prvMethodNameMatch(pxMessage, "CalibratePH") && payload_code != CMD_CODE_PH_CALIBRATE)
+                    code_method_mismatch = true;
+                else if (prvMethodNameMatch(pxMessage, "CalibrateDO") && payload_code != CMD_CODE_DO_CALIBRATE)
+                    code_method_mismatch = true;
                 else if (prvMethodNameMatch(pxMessage, "SetDeviceConfig") && payload_code != CMD_CODE_SET_DEVICE_CONFIG)
+                    code_method_mismatch = true;
+                else if (prvMethodNameMatch(pxMessage, "Reboot") && payload_code != CMD_CODE_REBOOT)
+                    code_method_mismatch = true;
+                else if (prvMethodNameMatch(pxMessage, "GetFullTelemetry") && payload_code != CMD_CODE_GET_FULL_TELEMETRY)
+                    code_method_mismatch = true;
+                else if (prvMethodNameMatch(pxMessage, "GetTelemetry") && payload_code != CMD_CODE_GET_FULL_TELEMETRY)
                     code_method_mismatch = true;
                 
                 if (code_method_mismatch){
@@ -303,12 +332,12 @@ static void prvHandleCommand(AzureIoTHubClientCommandRequest_t *pxMessage,
     if (_code == CMD_CODE_ASK_VERSION)
     {
         char formatted_time[32];
-        prvFormatScheduleTime(Sys_Info.epochtime, formatted_time, sizeof(formatted_time));
+        prvFormatScheduleTime(time(NULL), formatted_time, sizeof(formatted_time));
         cJSON_AddStringToObject(res, "Time", formatted_time);
     }
     else
     {
-        cJSON_AddNumberToObject(res, "TimeStamp", Sys_Info.epochtime);
+        cJSON_AddNumberToObject(res, "TimeStamp", time(NULL));
     }
     cJSON_AddStringToObject(res, "Message", response.payload);
     // cJSON_AddStringToObject(res, "HostName", IoTHubHandle.hostName);
@@ -339,6 +368,69 @@ static void prvHandleCommand(AzureIoTHubClientCommandRequest_t *pxMessage,
         cJSON_AddBoolToObject(res, "TelemetryActive", g_telemetry_active);
         cJSON_AddNumberToObject(res, "IntervalMs",
             g_telemetry_active ? (double)g_telemetry_interval_ms : 0);
+    }
+    else if (_code == CMD_CODE_GET_FULL_TELEMETRY)
+    {
+        PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
+
+        int16_t rssi = -120;
+        if (Is_System_Internet_Connected())
+        {
+            wifi_ap_record_t ap_info;
+            if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK)
+            {
+                rssi = ap_info.rssi;
+            }
+        }
+
+        uint32_t uptime_sec = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+
+        esp_reset_reason_t reason = esp_reset_reason();
+        const char *reason_str = "Unknown";
+        switch (reason) {
+            case ESP_RST_POWERON:   reason_str = "Power-on Reset"; break;
+            case ESP_RST_EXT:       reason_str = "External Reset"; break;
+            case ESP_RST_SW:        reason_str = "Software Reset"; break;
+            case ESP_RST_PANIC:     reason_str = "Software Panic"; break;
+            case ESP_RST_INT_WDT:   reason_str = "Interrupt Watchdog"; break;
+            case ESP_RST_TASK_WDT:  reason_str = "Task Watchdog"; break;
+            case ESP_RST_DEEPSLEEP: reason_str = "Deepsleep Reset"; break;
+            case ESP_RST_BROWNOUT:  reason_str = "Brownout Reset"; break;
+            default: break;
+        }
+
+        uint32_t free_ram = esp_get_free_heap_size();
+        const esp_partition_t *running_part = esp_ota_get_running_partition();
+        const char *part_label = (running_part != NULL) ? running_part->label : "Unknown";
+
+        cJSON *pl = cJSON_CreateObject();
+        cJSON *sensor_data = cJSON_CreateObject();
+        if (pl != NULL && sensor_data != NULL)
+        {
+            cJSON_AddStringToObject(pl, "HostName", IoTHubHandle.hostName);
+            cJSON_AddStringToObject(pl, "DeviceId", IoTHubHandle.deviceId);
+            cJSON_AddNumberToObject(pl, "Code", 508);
+            cJSON_AddNumberToObject(pl, "TimeStamp", (double)time(NULL));
+
+            cJSON_AddNumberToObject(sensor_data, "ph", status.ph);
+            cJSON_AddNumberToObject(sensor_data, "ph_temp", status.temperature);
+            cJSON_AddBoolToObject(sensor_data, "Valid", status.is_calibrated);
+            cJSON_AddNumberToObject(sensor_data, "do", status.do_mg_l);
+            cJSON_AddNumberToObject(sensor_data, "temp", status.do_temp_c);
+            cJSON_AddNumberToObject(sensor_data, "do_sat", status.do_saturation_pct);
+            cJSON_AddBoolToObject(sensor_data, "do_valid", status.do_valid);
+            cJSON_AddNumberToObject(sensor_data, "rssi", rssi);
+            cJSON_AddNumberToObject(sensor_data, "uptime", uptime_sec);
+            cJSON_AddStringToObject(sensor_data, "reset_reason", reason_str);
+            cJSON_AddNumberToObject(sensor_data, "free_ram", free_ram);
+            cJSON_AddNumberToObject(sensor_data, "v_probe_mv", status.v_probe_mv);
+            cJSON_AddNumberToObject(sensor_data, "do_err", status.do_error_code);
+            cJSON_AddStringToObject(sensor_data, "ver", VERSION);
+            cJSON_AddStringToObject(sensor_data, "ota_part", part_label);
+
+            cJSON_AddItemToObject(pl, "SensorData", sensor_data);
+            cJSON_AddItemToObject(res, "payload", pl);
+        }
     }
     char *jsonStr = cJSON_PrintUnformatted(res);
 
@@ -485,6 +577,7 @@ void User_Azure_Connect(void)
         // Báo cho OTA Bootloader biết FW mới kết nối mượt mà, huỷ bỏ Rollback
         esp_ota_mark_app_valid_cancel_rollback();
         ESP_LOGI("AZURE", "App marked as valid, OTA rollback cancelled.");
+             
 
         if (IoTHubHandle.isProcessLoopInitialized == false)
         {
@@ -524,6 +617,46 @@ void User_Azure_Connect(void)
                 ESP_LOGI("AZURE: TELEMETRY", "Create telemetry task fail\n");
             }
         }
+// --- KIỂM TRA BÁO CÁO KẾT QUẢ OTA LÊN CLOUD ---
+     char ota_res[16] = {0};
+     if (Nvs_Read_String("ota_res", ota_res) && strlen(ota_res) > 0)
+     {
+        int wait_timeout = 0;
+        while (!IoTHubHandle.isTransmitInitialized && wait_timeout < 20)
+        {
+            vTaskDelay(pdMS_TO_TICKS(100)); // Chờ 100ms mỗi lần
+            wait_timeout++;
+        }
+         char ota_err[64] = {0};
+         Nvs_Read_String("ota_err", ota_err);
+         
+                  char report_str[384]; // Nới rộng buffer lên 384 bytes cho an toàn
+         snprintf(report_str, sizeof(report_str),
+             "{\"payload\":{"
+                 "\"HostName\":\"%s\","
+                 "\"DeviceId\":\"%s\","
+                 "\"Code\":501,"
+                 "\"TimeStamp\":%lld,"
+                 "\"OtaResult\":\"%s\","
+                 "\"OtaError\":\"%s\","
+                 "\"FirmwareVer\":\"%s\""
+             "}}",
+             IoTHubHandle.hostName,
+             IoTHubHandle.deviceId,
+             (long long)time(NULL),
+             ota_res,
+             ota_err,
+             VERSION
+         );
+
+         
+         ESP_LOGW("AZURE: OTA REPORT", "Sending OTA report to Azure: %s", report_str);
+         PushTelemetry(report_str); // Đẩy báo cáo vào hàng đợi gửi đi
+         
+         // Xóa cờ trong NVS để tránh gửi lặp lại ở những lần khởi động sau
+         Nvs_Write_String("ota_res", "");
+         Nvs_Write_String("ota_err", "");
+     }
     }
 }
 
@@ -814,14 +947,16 @@ static void prv_telemetry_state_load(void){
 
 static void Azure_Telemetry_Task(void *pvParameters)
 {
-    uint32_t elapsed_ms = 0;
     prv_telemetry_state_load();
+    uint32_t last_send_tick = xTaskGetTickCount();
+
     while (1)
     {
         /* ---- IDLE: Chờ cho đến khi backend gửi START ---- */
         if (!g_telemetry_active)
         {
             vTaskDelay(pdMS_TO_TICKS(500));  // Kiểm tra mỗi 500ms
+            last_send_tick = xTaskGetTickCount();
             continue;
         }
 
@@ -830,39 +965,101 @@ static void Azure_Telemetry_Task(void *pvParameters)
             || IoTHubHandle.isNeedReinit)
         {
             vTaskDelay(pdMS_TO_TICKS(1000));
+            last_send_tick = xTaskGetTickCount();
             continue;
         }        
 
+        uint32_t now_tick = xTaskGetTickCount();
+        uint32_t elapsed_ms = (now_tick - last_send_tick) * portTICK_PERIOD_MS;
+
         if (elapsed_ms >= g_telemetry_interval_ms)
         {
+            last_send_tick = now_tick;
+
             PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
-            char tele_str[512];
+            
+            // 1. Lấy cường độ tín hiệu WiFi (RSSI)
+            int16_t rssi = -120; 
+            if (Is_System_Internet_Connected())
+            {
+                wifi_ap_record_t ap_info;
+                if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK)
+                {
+                    rssi = ap_info.rssi;
+                }
+            }
+
+            // 2. Lấy thời gian Uptime (đơn vị: giây)
+            uint32_t uptime_sec = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+
+            // 3. Đọc và dịch nguyên nhân Reset
+            esp_reset_reason_t reason = esp_reset_reason();
+            const char *reason_str = "Unknown";
+            switch (reason) {
+                case ESP_RST_POWERON:   reason_str = "Power-on Reset"; break;
+                case ESP_RST_EXT:       reason_str = "External Reset"; break;
+                case ESP_RST_SW:        reason_str = "Software Reset"; break;
+                case ESP_RST_PANIC:     reason_str = "Software Panic"; break;
+                case ESP_RST_INT_WDT:   reason_str = "Interrupt Watchdog"; break;
+                case ESP_RST_TASK_WDT:  reason_str = "Task Watchdog"; break;
+                case ESP_RST_DEEPSLEEP: reason_str = "Deepsleep Reset"; break;
+                case ESP_RST_BROWNOUT:  reason_str = "Brownout Reset"; break;
+                default: break;
+            }
+
+            // 4. Lấy RAM trống
+            uint32_t free_ram = esp_get_free_heap_size();
+
+            // 5. Lấy tên phân vùng OTA đang chạy (thường là "ota_0" hoặc "ota_1")
+            const esp_partition_t *running_part = esp_ota_get_running_partition();
+            const char *part_label = (running_part != NULL) ? running_part->label : "Unknown";
+
+
+            // 5. Định dạng chuỗi JSON gửi lên Azure (Nới rộng lên 768 bytes)
+            char tele_str[768];
             int len = snprintf(tele_str, sizeof(tele_str),
                 "{\"payload\":{"
-                    "\"HostName\":\"%s\","
-                    "\"DeviceId\":\"%s\","
-                    "\"Code\":504,"
-                    "\"TimeStamp\":%lld,"
-                    "\"SensorData\":{"
-                        "\"pH\":%.2f,"
-                        // "\"temp\":%.2f,"
-                        "\"Valid\":%s,"
-                        "\"do\":%.2f,"
-                        "\"temp\":%.2f,"
-                        "\"do_sat\":%.2f,"
-                        "\"do_valid\":%s"
-                    "}"
-                "}}",
+                "\"HostName\":\"%s\","
+                "\"DeviceId\":\"%s\","
+                "\"Code\":504,"
+                "\"TimeStamp\":%lld,"
+                "\"SensorData\":{"
+                    "\"ph\":%.2f,"
+                    "\"ph_temp\":%.2f,"
+                    "\"Valid\":%s,"
+                    "\"do\":%.2f,"
+                    "\"temp\":%.2f,"
+                    "\"do_sat\":%.2f,"
+                    "\"do_valid\":%s,"   
+                    "\"rssi\":%d,"
+                    "\"uptime\":%lu,"
+                    "\"reset_reason\":\"%s\","
+                    "\"free_ram\":%lu,"
+                    "\"v_probe_mv\":%.2f,"
+                    "\"do_err\":%d,"
+                    "\"ver\":\"%s\","
+                    "\"ota_part\":\"%s\""
+                "}"                        
+            "}}",
+
                 IoTHubHandle.hostName,
                 IoTHubHandle.deviceId,
-                (long long)Sys_Info.epochtime,
+                (long long)time(NULL),
                 (double)status.ph,
-                // (double)status.temperature,
+                (double)status.temperature,
                 status.is_calibrated ? "true" : "false",
                 (double)status.do_mg_l,
                 (double)status.do_temp_c,
                 (double)status.do_saturation_pct,
-                status.do_valid ? "true" : "false"
+                status.do_valid ? "true" : "false",
+                rssi,
+                (unsigned long)uptime_sec,
+                reason_str,
+                (unsigned long)free_ram,
+                (double)status.v_probe_mv,
+                status.do_error_code,
+                VERSION,
+                part_label
             );
 
             if (len > 0 && len < sizeof(tele_str))
@@ -870,18 +1067,11 @@ static void Azure_Telemetry_Task(void *pvParameters)
                 ESP_LOGI("AZURE: TELEMETRY", "Push telemetry [Interval]: %s", tele_str);
                 PushTelemetry(tele_str);
             }
-            
-            elapsed_ms = 0;
-        }
-        else
-        {
-            elapsed_ms += 100;
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
-
 
 
 /* Parse Azure IoT Hub connection string:
@@ -997,7 +1187,7 @@ static void prv_wifi_change_task(void *pvParameters)
     {
         cJSON_AddItemToObject(tele, "payload", pl);
         cJSON_AddNumberToObject(pl, "Code", CMD_CODE_SET_DEVICE_CONFIG);
-        cJSON_AddNumberToObject(pl, "TimeStamp", Sys_Info.epochtime);
+        cJSON_AddNumberToObject(pl, "TimeStamp", time(NULL));
         cJSON_AddStringToObject(pl, "Target", "wifi");
         cJSON_AddStringToObject(pl, "SSID", req->ssid);
         cJSON_AddBoolToObject(pl, "Success", success);
@@ -1026,12 +1216,13 @@ static void prv_wifi_change_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
-/*Task: delay cho response kịp gửi, rồi reboot*/
-static void prv_baud_change_reboot_task(void *pvParameters){
-    ESP_LOGW("AZURE: BAUD", "Rebooting in 2s to apply new baud rate...");
+static void prv_reboot_task(void *pvParameters)
+{
+    ESP_LOGW("AZURE: REBOOT", "Rebooting in 2s...");
     vTaskDelay(pdMS_TO_TICKS(2000));
     esp_restart();
 }
+
 
 /* Handle direct method */
 void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *response)
@@ -1067,7 +1258,7 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
                     cJSON_AddNumberToObject(tele, "status", 200);
                     cJSON_AddItemToObject(tele, "payload", update_payload);
                     cJSON_AddNumberToObject(update_payload, "Code", 501);
-                    cJSON_AddNumberToObject(update_payload, "TimeStamp", (double)Sys_Info.epochtime);
+                    cJSON_AddNumberToObject(update_payload, "TimeStamp", (double)time(NULL));
                     cJSON_AddStringToObject(update_payload, "Message", response->payload);
 
                     tele_str = cJSON_PrintUnformatted(tele);
@@ -1124,7 +1315,7 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
             response->status = COMMAND_STATUS_OK;
             response->payloadLength = snprintf(response->payload, sizeof(response->payload), "Firmware Version: %s", VERSION);
 
-            time_t now = Sys_Info.epochtime;
+            time_t now = time(NULL);
             char formatted_now[32];
             char msg_str[32];
 
@@ -1209,7 +1400,7 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
                     {
                         cJSON_AddItemToObject(tele, "payload", tele_payload);
                         cJSON_AddNumberToObject(tele_payload, "Code", CMD_CODE_GET_PH);
-                        cJSON_AddNumberToObject(tele_payload, "TimeStamp", Sys_Info.epochtime);
+                        cJSON_AddNumberToObject(tele_payload, "TimeStamp", time(NULL));
                         cJSON_AddStringToObject(tele_payload, "HostName", IoTHubHandle.hostName);
                         cJSON_AddStringToObject(tele_payload, "DeviceID", IoTHubHandle.deviceId);
 
@@ -1279,7 +1470,7 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
                 {
                     cJSON_AddItemToObject(tele, "payload", tele_payload);
                     cJSON_AddNumberToObject(tele_payload, "Code", CMD_CODE_GET_PH);
-                    cJSON_AddNumberToObject(tele_payload, "TimeStamp", Sys_Info.epochtime);
+                    cJSON_AddNumberToObject(tele_payload, "TimeStamp", time(NULL));
                     cJSON_AddStringToObject(tele_payload, "HostName", IoTHubHandle.hostName);
                     cJSON_AddStringToObject(tele_payload, "DeviceID", IoTHubHandle.deviceId);
 
@@ -1306,57 +1497,125 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
         {
             ESP_LOGI("AZURE: ", "---------- PH CALIBRATE ----------");
             cJSON *action = cJSON_GetObjectItem(data, "Action");
-            if (action != NULL && cJSON_IsString(action))
+            cJSON *target_ph_item = cJSON_GetObjectItem(data, "TargetPH");
+            cJSON *cal_type_item = cJSON_GetObjectItem(data, "CalType");
+            
+            PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
+            bool success = false;
+            float target_ph = 0.0f;
+            uint8_t cal_type = 2;
+
+            if (target_ph_item != NULL && cJSON_IsNumber(target_ph_item) && cal_type_item != NULL && cJSON_IsNumber(cal_type_item))
             {
-                PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
-                bool success = false;
-                if (strcasecmp(action->valuestring, "CAL_7") == 0)
+                target_ph = (float)target_ph_item->valuedouble;
+                cal_type = (uint8_t)cal_type_item->valueint;
+                success = Calibrate_PH_Point(target_ph, status.v_probe_mv, status.temperature, cal_type);
+                if (success)
                 {
-                    success = Calibrate_PH_Point(7.00f, status.v_probe_mv, status.temperature, 2);
+                    response->status = COMMAND_STATUS_OK;
+                    response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                        "Calibrate pH %.2f (type %d) OK", target_ph, cal_type);
+                }
+                else
+                {
+                    response->status = COMMAND_STATUS_BAD_REQUEST;
+                    response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                        "Calibrate pH %.2f (type %d) failed", target_ph, cal_type);
+                }
+            }
+            else if (action != NULL && cJSON_IsString(action))
+            {
+                bool action_valid = true;
+                bool is_reset_action = false;
+                if (strcasecmp(action->valuestring, "CAL_7") == 0 || strcasecmp(action->valuestring, "CAL_7_2PT") == 0)
+                {
+                    target_ph = 7.00f;
+                    cal_type = 2;
+                }
+                else if (strcasecmp(action->valuestring, "CAL_4") == 0 || strcasecmp(action->valuestring, "CAL_4_2PT") == 0)
+                {
+                    target_ph = 4.00f;
+                    cal_type = 2;
+                }
+                else if (strcasecmp(action->valuestring, "CAL_4_3PT") == 0)
+                {
+                    target_ph = 4.00f;
+                    cal_type = 3;
+                }
+                else if (strcasecmp(action->valuestring, "CAL_686_3PT") == 0)
+                {
+                    target_ph = 6.86f;
+                    cal_type = 3;
+                }
+                else if (strcasecmp(action->valuestring, "CAL_918_3PT") == 0)
+                {
+                    target_ph = 9.18f;
+                    cal_type = 3;
+                }
+                else if (strcasecmp(action->valuestring, "CAL_7_3PT") == 0)
+                {
+                    target_ph = 7.00f;
+                    cal_type = 3;
+                }
+                else if (strcasecmp(action->valuestring, "CAL_10_3PT") == 0)
+                {
+                    target_ph = 10.00f;
+                    cal_type = 3;
+                }
+                else if (strcasecmp(action->valuestring, "RESET_PH_SENSOR") == 0)
+                {
+                    is_reset_action = true;
+                }
+                else
+                {
+                    action_valid = false;
+                }
+
+                if (is_reset_action)
+                {
+                    success = Reset_PH_Calibration();
                     if (success)
                     {
                         response->status = COMMAND_STATUS_OK;
-                        response->payloadLength = snprintf(response->payload,
-                            sizeof(response->payload), "Calibrate pH 7.00 OK");
+                        response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                            "Reset pH sensor calibration OK");
                     }
                     else
                     {
                         response->status = COMMAND_STATUS_BAD_REQUEST;
-                        response->payloadLength = snprintf(response->payload,
-                            sizeof(response->payload), "Calibrate pH 7.00 failed");
+                        response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                            "Reset pH sensor calibration failed");
                     }
                 }
-                else if (strcasecmp(action->valuestring, "CAL_4") == 0)
+                else if (action_valid)
                 {
-                    success = Calibrate_PH_Point(4.00f, status.v_probe_mv, status.temperature, 2);
+                    success = Calibrate_PH_Point(target_ph, status.v_probe_mv, status.temperature, cal_type);
                     if (success)
                     {
                         response->status = COMMAND_STATUS_OK;
-                        response->payloadLength = snprintf(response->payload,
-                            sizeof(response->payload), "Calibrate pH 4.01 OK");
+                        response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                            "Calibrate pH %.2f (Action %s) OK", target_ph, action->valuestring);
                     }
                     else
                     {
                         response->status = COMMAND_STATUS_BAD_REQUEST;
-                        response->payloadLength = snprintf(response->payload,
-                            sizeof(response->payload), "Calibrate pH 4.01 failed");
+                        response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                            "Calibrate pH %.2f (Action %s) failed", target_ph, action->valuestring);
                     }
                 }
                 else
                 {
                     ESP_LOGW("AZURE: PH CALIBRATE", "Unknown action: %s", action->valuestring);
                     response->status = COMMAND_STATUS_BAD_REQUEST;
-                    response->payloadLength = snprintf(response->payload,
-                        sizeof(response->payload),
-                        "Unknown action: %s (expected CAL_7 or CAL_4)", action->valuestring);
+                    response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                        "Unknown action: %s", action->valuestring);
                 }
             }
             else
             {
                 response->status = COMMAND_STATUS_BAD_REQUEST;
-                response->payloadLength = snprintf(response->payload,
-                    sizeof(response->payload),
-                    "Missing or invalid Action field");
+                response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                    "Missing Action or TargetPH + CalType fields");
             }
         }
         else if (_code == CMD_CODE_SET_DEVICE_CONFIG) // code == 505
@@ -1565,6 +1824,193 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
                 }
             }
         }
+
+        else if (_code == CMD_CODE_DO_CALIBRATE)
+        {
+            ESP_LOGI("AZURE: ", "---------- DO CALIBRATE ----------");
+            cJSON *action = cJSON_GetObjectItem(data, "Action");
+            cJSON *value_item = cJSON_GetObjectItem(data, "Value");
+            if (action != NULL && cJSON_IsString(action))
+            {
+                bool action_valid = true;
+                esp_err_t err = ESP_OK;
+                if (strcasecmp(action->valuestring, "CAL_DO_ZERO") == 0)
+                {
+                    err = do_sensor_calibrate_zero();
+                }
+                else if (strcasecmp(action->valuestring, "CAL_DO_SLOPE") == 0)
+                {
+                    err = do_sensor_calibrate_slope();
+                }
+                else if (strcasecmp(action->valuestring, "CORRECT_DO_TEMP") == 0)
+                {
+                    if (value_item != NULL && cJSON_IsNumber(value_item))
+                    {
+                        err = do_sensor_correct_temp((float)value_item->valuedouble);
+                    }
+                    else
+                    {
+                        action_valid = false;
+                        response->status = COMMAND_STATUS_BAD_REQUEST;
+                        response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                            "Missing Value field for CORRECT_DO_TEMP");
+                    }
+                }
+                else if (strcasecmp(action->valuestring, "COMPENSATE_SALINITY") == 0)
+                {
+                    if (value_item != NULL && cJSON_IsNumber(value_item))
+                    {
+                        err = do_sensor_set_salinity((float)value_item->valuedouble);
+                    }
+                    else
+                    {
+                        action_valid = false;
+                        response->status = COMMAND_STATUS_BAD_REQUEST;
+                        response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                            "Missing Value field for COMPENSATE_SALINITY");
+                    }
+                }
+                else if (strcasecmp(action->valuestring, "RESET_DO_SENSOR") == 0)
+                {
+                    err = do_sensor_reset();
+                }
+                else
+                {
+                    action_valid = false;
+                    response->status = COMMAND_STATUS_BAD_REQUEST;
+                    response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                        "Unknown Action: %s", action->valuestring);
+                }
+                if (action_valid)
+                {
+                    if (err == ESP_OK)
+                    {
+                        response->status = COMMAND_STATUS_OK;
+                        response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                            "DO Calibrate Action %s OK", action->valuestring);
+                    }
+                    else
+                    {
+                        response->status = COMMAND_STATUS_BAD_REQUEST;
+                        response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                            "DO Calibrate Action %s failed: %d", action->valuestring, err);
+                    }
+                }
+            }
+            else
+            {
+                response->status = COMMAND_STATUS_BAD_REQUEST;
+                response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                    "Missing or invalid Action field");
+            }
+        }
+        else if (_code == CMD_CODE_REBOOT)
+        {
+            ESP_LOGI("AZURE: ", "---------- REBOOT ----------");
+            response->status = COMMAND_STATUS_OK;
+            response->payloadLength = snprintf(response->payload, sizeof(response->payload),
+                "Device is rebooting...");
+
+            if (xTaskCreatePinnedToCore(prv_reboot_task, "reboot_task", 2048, NULL, 3, NULL, 0) != pdPASS)
+            {
+                ESP_LOGE("AZURE: REBOOT", "Failed to create reboot task, restarting immediately");
+                esp_restart();
+            }
+        }
+        else if (_code == CMD_CODE_GET_FULL_TELEMETRY) // code == 508
+        {
+            ESP_LOGI("AZURE: ", "---------- GET FULL TELEMETRY (508) ----------");
+            PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
+
+            int16_t rssi = -120;
+            if (Is_System_Internet_Connected())
+            {
+                wifi_ap_record_t ap_info;
+                if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK)
+                {
+                    rssi = ap_info.rssi;
+                }
+            }
+
+            uint32_t uptime_sec = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+
+            esp_reset_reason_t reason = esp_reset_reason();
+            const char *reason_str = "Unknown";
+            switch (reason) {
+                case ESP_RST_POWERON:   reason_str = "Power-on Reset"; break;
+                case ESP_RST_EXT:       reason_str = "External Reset"; break;
+                case ESP_RST_SW:        reason_str = "Software Reset"; break;
+                case ESP_RST_PANIC:     reason_str = "Software Panic"; break;
+                case ESP_RST_INT_WDT:   reason_str = "Interrupt Watchdog"; break;
+                case ESP_RST_TASK_WDT:  reason_str = "Task Watchdog"; break;
+                case ESP_RST_DEEPSLEEP: reason_str = "Deepsleep Reset"; break;
+                case ESP_RST_BROWNOUT:  reason_str = "Brownout Reset"; break;
+                default: break;
+            }
+
+            uint32_t free_ram = esp_get_free_heap_size();
+            const esp_partition_t *running_part = esp_ota_get_running_partition();
+            const char *part_label = (running_part != NULL) ? running_part->label : "Unknown";
+
+            char tele_str[768];
+            int len = snprintf(tele_str, sizeof(tele_str),
+                "{\"payload\":{"
+                "\"HostName\":\"%s\","
+                "\"DeviceId\":\"%s\","
+                "\"Code\":508,"
+                "\"TimeStamp\":%lld,"
+                "\"SensorData\":{"
+                    "\"ph\":%.2f,"
+                    "\"ph_temp\":%.2f,"
+                    "\"Valid\":%s,"
+                    "\"do\":%.2f,"
+                    "\"temp\":%.2f,"
+                    "\"do_sat\":%.2f,"
+                    "\"do_valid\":%s,"   
+                    "\"rssi\":%d,"
+                    "\"uptime\":%lu,"
+                    "\"reset_reason\":\"%s\","
+                    "\"free_ram\":%lu,"
+                    "\"v_probe_mv\":%.2f,"
+                    "\"do_err\":%d,"
+                    "\"ver\":\"%s\","
+                    "\"ota_part\":\"%s\""
+                "}"                        
+            "}}",
+                IoTHubHandle.hostName,
+                IoTHubHandle.deviceId,
+                (long long)time(NULL),
+                (double)status.ph,
+                (double)status.temperature,
+                status.is_calibrated ? "true" : "false",
+                (double)status.do_mg_l,
+                (double)status.do_temp_c,
+                (double)status.do_saturation_pct,
+                status.do_valid ? "true" : "false",
+                rssi,
+                (unsigned long)uptime_sec,
+                reason_str,
+                (unsigned long)free_ram,
+                (double)status.v_probe_mv,
+                status.do_error_code,
+                VERSION,
+                part_label
+            );
+
+            if (len > 0 && len < sizeof(tele_str))
+            {
+                ESP_LOGI("AZURE: TELEMETRY (508)", "Push requested full telemetry: %s", tele_str);
+                PushTelemetry(tele_str);
+                response->status = COMMAND_STATUS_OK;
+                snprintf(response->payload, sizeof(response->payload), "Full telemetry sent successfully");
+            }
+            else
+            {
+                response->status = COMMAND_STATUS_DEVICE_ERROR;
+                snprintf(response->payload, sizeof(response->payload), "Failed to format telemetry JSON");
+            }
+        }
+
         else
         {
             response->status = COMMAND_STATUS_BAD_REQUEST;

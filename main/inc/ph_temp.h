@@ -8,7 +8,7 @@
 // Định nghĩa lại 2 mốc điện áp riêng biệt
 #define V_REF_ADC       2.048f  // <-- THAY BẰNG ÁP VDD BẠN ĐO ĐƯỢC TẠI CHÂN 7
 #define V_REF_BRIDGE    2.048f
-#define V_PH_REF_ACTUAL 2.201f  // Giá trị thực tế tại chân ph_REFM
+// #define V_PH_REF_ACTUAL 2.201f  // Giá trị thực tế tại chân ph_REFM
 // #define V_REF           1.25f
 #define PGA             1.0f
 #define ADC_SCALE       8388607.0f
@@ -95,5 +95,6 @@ void Update_DO_Sensor_Measurements(float do_mg_l, float do_temp_c, float do_satu
 bool Load_Calibration_From_Storage(void);
 bool Save_Calibration_To_Storage(const PhCalibration_t *cal);
 bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_c, uint8_t cal_type);
+bool Reset_PH_Calibration(void);
 
 #endif // PH_TEMP_H

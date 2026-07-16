@@ -48,7 +48,7 @@ static void lcd_send(const uint8_t *data, int len, bool is_data) {
   gpio_set_level(LCD_PIN_DC, is_data ? 1 : 0);
   gpio_set_level(LCD_PIN_CS, 0); // Kéo CS xuống LOW để chọn thiết bị
 
-  esp_rom_delay_us(10); // Delay ngắn để ổn định chân DC/CS trước khi truyền
+  esp_rom_delay_us(20); // Delay ngắn để ổn định chân DC/CS trước khi truyền
 
   spi_transaction_t t = {0};
   if (len <= 4) {
@@ -321,10 +321,21 @@ void LCD_DrawCircle(uint8_t cx, uint8_t cy, uint8_t r, uint8_t color) {
 /* =====================================================================
  * Ký tự / chuỗi (font 5×7)
  * ===================================================================== */
+static const uint8_t s_degree_font5x7[5] = {0x00, 0x03, 0x03, 0x00, 0x00};
+
+static const uint8_t *get_font5x7_data(char c) {
+  uint8_t uc = (uint8_t)c;
+  if (uc == 0xB0 || uc == 0xDF || uc == 176 || uc == 223) {
+    return s_degree_font5x7;
+  }
+  if (uc < 0x20 || uc > 0x7E) {
+    uc = '?';
+  }
+  return font5x7[uc - 0x20];
+}
+
 void LCD_DrawChar(uint8_t x, uint8_t y, char c, uint8_t color) {
-  if (c < 0x20 || c > 0x7E)
-    c = '?';
-  const uint8_t *col_data = font5x7[c - 0x20];
+  const uint8_t *col_data = get_font5x7_data(c);
   for (uint8_t col = 0; col < 5; col++) {
     uint8_t line = col_data[col];
     for (uint8_t row = 0; row < 8; row++) {
@@ -342,6 +353,10 @@ void LCD_DrawChar(uint8_t x, uint8_t y, char c, uint8_t color) {
 void LCD_DrawString(uint8_t x, uint8_t y, const char *str, uint8_t color) {
   uint8_t cx = x;
   while (*str) {
+    if ((uint8_t)*str == 0xC2) {
+      str++;
+      continue;
+    }
     if (*str == '\n') {
       cx = x;
       y += 8;
@@ -359,9 +374,7 @@ void LCD_DrawString(uint8_t x, uint8_t y, const char *str, uint8_t color) {
 
 void LCD_DrawCharScaled(uint8_t x, uint8_t y, char c, uint8_t scale_x,
                         uint8_t scale_y, uint8_t color) {
-  if (c < 0x20 || c > 0x7E)
-    c = '?';
-  const uint8_t *col_data = font5x7[c - 0x20];
+  const uint8_t *col_data = get_font5x7_data(c);
   for (uint8_t col = 0; col < 5; col++) {
     uint8_t line = col_data[col];
     for (uint8_t row = 0; row < 8; row++) {
@@ -388,6 +401,10 @@ void LCD_DrawStringScaled(uint8_t x, uint8_t y, const char *str,
                           uint8_t scale_x, uint8_t scale_y, uint8_t color) {
   uint8_t cx = x;
   while (*str) {
+    if ((uint8_t)*str == 0xC2) {
+      str++;
+      continue;
+    }
     if (*str == '\n') {
       cx = x;
       y += 8 * scale_y;
@@ -403,16 +420,14 @@ void LCD_DrawStringScaled(uint8_t x, uint8_t y, const char *str,
   }
 }
 
-void LCD_DrawInt(uint8_t x, uint8_t y, int32_t val, uint8_t color) {
+__attribute__((unused)) void LCD_DrawInt(uint8_t x, uint8_t y, int32_t val, uint8_t color) {
   char buf[12];
   snprintf(buf, sizeof(buf), "%ld", (long)val);
   LCD_DrawString(x, y, buf, color);
 }
 
 void LCD_DrawCharClipped(int16_t x, int16_t y, char c, uint8_t min_x, uint8_t max_x, uint8_t color) {
-  if (c < 0x20 || c > 0x7E)
-    c = '?';
-  const uint8_t *col_data = font5x7[c - 0x20];
+  const uint8_t *col_data = get_font5x7_data(c);
   for (uint8_t col = 0; col < 5; col++) {
     int16_t px_x = x + col;
     if (px_x >= min_x && px_x < max_x) {
@@ -439,11 +454,14 @@ void LCD_DrawCharClipped(int16_t x, int16_t y, char c, uint8_t min_x, uint8_t ma
 
 void LCD_DrawStringScroll(uint8_t x, uint8_t y, const char *str, uint8_t max_x, int16_t scroll_x, uint8_t color) {
   uint16_t len = strlen(str);
+  uint16_t char_idx = 0;
   for (uint16_t i = 0; i < len; i++) {
-    int16_t char_x = x + i * 6 - scroll_x;
+    if ((uint8_t)str[i] == 0xC2) continue;
+    int16_t char_x = x + char_idx * 6 - scroll_x;
     if (char_x + 6 > x && char_x < max_x) {
       LCD_DrawCharClipped(char_x, y, str[i], x, max_x, color);
     }
+    char_idx++;
   }
 }
 
@@ -487,7 +505,7 @@ uint8_t LCD_DrawLargeChar(uint8_t x, uint8_t y, char c, uint8_t color) {
   return w;
 }
 
-void LCD_DrawLargeString(uint8_t x, uint8_t y, const char *str, uint8_t color) {
+__attribute__((unused)) void LCD_DrawLargeString(uint8_t x, uint8_t y, const char *str, uint8_t color) {
   uint8_t cx = x;
   while (*str) {
     uint8_t adv = LCD_DrawLargeChar(cx, y, *str, color);
@@ -498,7 +516,7 @@ void LCD_DrawLargeString(uint8_t x, uint8_t y, const char *str, uint8_t color) {
   }
 }
 
-uint8_t LCD_GetLargeStringWidth(const char *str) {
+__attribute__((unused)) uint8_t LCD_GetLargeStringWidth(const char *str) {
   uint8_t total = 0;
   while (*str) {
     int8_t idx = large_font_idx(*str);
@@ -511,6 +529,507 @@ uint8_t LCD_GetLargeStringWidth(const char *str) {
   if (total > 0)
     total--; /* bỏ khoảng cách cuối */
   return total;
+}
+
+uint8_t LCD_DrawMediumChar(uint8_t x, uint8_t y, char c, uint8_t color) {
+  int8_t idx = large_font_idx(c);
+  if (idx < 0)
+    return 0;
+
+  const medium_font_char_t *fc = &g_medium_font[idx];
+  uint8_t w = fc->width;
+
+  for (uint8_t row = 0; row < 17; row++) {
+    uint16_t line = fc->bitmap[row];
+    for (uint8_t col = 0; col < w; col++) {
+      uint8_t pix = (line >> (w - 1 - col)) & 1;
+      LCD_DrawPixel(x + col, y + row, pix ? color : (color ^ 1));
+    }
+  }
+  return w;
+}
+
+void LCD_DrawMediumString(uint8_t x, uint8_t y, const char *str, uint8_t color) {
+  uint8_t cx = x;
+  while (*str) {
+    uint8_t adv = LCD_DrawMediumChar(cx, y, *str, color);
+    if (adv == 0)
+      adv = 6;     /* ký tự không hỗ trợ: skip 6px */
+    cx += adv + 1; /* 1px khoảng cách giữa ký tự */
+    str++;
+  }
+}
+
+uint8_t LCD_GetMediumStringWidth(const char *str) {
+  uint8_t total = 0;
+  while (*str) {
+    int8_t idx = large_font_idx(*str);
+    if (idx >= 0)
+      total += g_medium_font[idx].width + 1;
+    else
+      total += 7;
+    str++;
+  }
+  if (total > 0)
+    total--;
+  return total;
+}
+
+static uint8_t lcd_text_width(const char *str) {
+  return (uint8_t)(strlen(str) * 6);
+}
+
+static uint8_t lcd_center_in_panel(uint8_t panel_x, uint8_t panel_w,
+                                   uint8_t content_w) {
+  if (content_w >= panel_w) {
+    return panel_x;
+  }
+  return panel_x + (panel_w - content_w) / 2;
+}
+
+static uint8_t LCD_DrawChar2x(uint8_t x, uint8_t y, char c, uint8_t color) {
+  if (c < 0x20 || c > 0x7E)
+    return 0;
+  const uint8_t *col_data = font5x7[c - 0x20];
+  for (uint8_t col = 0; col < 5; col++) {
+    uint8_t b = col_data[col];
+    for (uint8_t row = 0; row < 7; row++) {
+      if ((b >> row) & 1) {
+        uint8_t px = x + col * 2;
+        uint8_t py = y + row * 2;
+        LCD_DrawPixel(px, py, color);
+        LCD_DrawPixel(px + 1, py, color);
+        LCD_DrawPixel(px, py + 1, color);
+        LCD_DrawPixel(px + 1, py + 1, color);
+      }
+    }
+  }
+  return 10;
+}
+
+static void LCD_DrawString2x(uint8_t x, uint8_t y, const char *str, uint8_t color) {
+  uint8_t cx = x;
+  while (*str) {
+    uint8_t adv = LCD_DrawChar2x(cx, y, *str, color);
+    cx += adv + 2;
+    str++;
+  }
+}
+
+static uint8_t LCD_GetStringWidth2x(const char *str) {
+  uint8_t len = strlen(str);
+  if (len == 0) return 0;
+  return (uint8_t)(len * 12 - 2);
+}
+
+static uint8_t LCD_DrawChar3x(uint8_t x, uint8_t y, char c, uint8_t color) {
+  if (c < 0x20 || c > 0x7E)
+    return 0;
+  const uint8_t *col_data = font5x7[c - 0x20];
+  for (uint8_t col = 0; col < 5; col++) {
+    uint8_t b = col_data[col];
+    for (uint8_t row = 0; row < 7; row++) {
+      if ((b >> row) & 1) {
+        uint8_t px = x + col * 3;
+        uint8_t py = y + row * 3;
+        for (uint8_t dx = 0; dx < 3; dx++) {
+          for (uint8_t dy = 0; dy < 3; dy++) {
+            LCD_DrawPixel(px + dx, py + dy, color);
+          }
+        }
+      }
+    }
+  }
+  return 15;
+}
+
+static void LCD_DrawString3x(uint8_t x, uint8_t y, const char *str, uint8_t color) {
+  uint8_t cx = x;
+  while (*str) {
+    uint8_t adv = LCD_DrawChar3x(cx, y, *str, color);
+    cx += adv + 3;
+    str++;
+  }
+}
+
+static uint8_t LCD_GetStringWidth3x(const char *str) {
+  uint8_t len = strlen(str);
+  if (len == 0) return 0;
+  return (uint8_t)(len * 18 - 3);
+}
+
+static void lcd_draw_dual_metric(uint8_t panel_x, uint8_t panel_w, uint8_t val_y,
+                                 uint8_t unit_y, const char *val_str,
+                                 const char *unit_str, bool unit_medium) {
+  uint8_t val_w = LCD_GetStringWidth2x(val_str);
+  uint8_t unit_w =
+      unit_medium ? LCD_GetMediumStringWidth(unit_str) : lcd_text_width(unit_str);
+
+  uint8_t val_x = lcd_center_in_panel(panel_x, panel_w, val_w);
+  uint8_t unit_x = lcd_center_in_panel(panel_x, panel_w, unit_w);
+
+  LCD_DrawString2x(val_x, val_y, val_str, LCD_COLOR_ON);
+  if (unit_medium) {
+    LCD_DrawMediumString(unit_x, unit_y, unit_str, LCD_COLOR_ON);
+  } else {
+    LCD_DrawString(unit_x, unit_y, unit_str, LCD_COLOR_ON);
+  }
+}
+
+/* =====================================================================
+ * Bieu do thoi gian thuc (rolling chart + truc X/Y)
+ * ===================================================================== */
+/* So diem = cua so thoi gian / CHART_SEC_PER_POINT.
+ * 24 diem x 2s = ~46s (hien thi tam 45 giay). */
+#define CHART_PLOT_FULL_W  24
+#define CHART_PLOT_HALF_W  24
+#define CHART_PLOT_H       26
+#define CHART_AREA_TOP     12
+#define CHART_Y_LBL_W      14
+#define CHART_X_LBL_H      7
+#define CHART_PH_AXIS_MIN   0.0f
+#define CHART_PH_AXIS_MAX   14.0f
+#define CHART_PH_FOCUS_LO   6.0f
+#define CHART_PH_FOCUS_HI   9.0f
+#define CHART_PH_INIT       7.0f
+/* Ty le chieu cao: 0-6 | 6-9 (lon) | 9-14 */
+#define CHART_PH_FRAC_LOW   0.18f
+#define CHART_PH_FRAC_MID   0.55f
+#define CHART_PH_FRAC_HIGH  0.27f
+#define CHART_DO_MIN       0.0f
+#define CHART_DO_MAX       20.0f
+/* Moi diem du lieu cach nhau bao nhieu giay (tick==0 moi 2s trong lcd_demo_task) */
+#define CHART_SEC_PER_POINT 2
+
+static float s_chart_ph_full[CHART_PLOT_FULL_W];
+static float s_chart_do_full[CHART_PLOT_FULL_W];
+static float s_chart_ph_half[CHART_PLOT_HALF_W];
+static float s_chart_do_half[CHART_PLOT_HALF_W];
+static uint8_t s_chart_ph_full_cnt = 0;
+static uint8_t s_chart_do_full_cnt = 0;
+static uint8_t s_chart_ph_half_cnt = 0;
+static uint8_t s_chart_do_half_cnt = 0;
+static display_view_t s_chart_last_view = DISP_VIEW_COUNT;
+static display_mode_t s_chart_last_mode = DISP_MODE_COUNT;
+
+static void chart_reset_buffers(void) {
+  for (uint8_t i = 0; i < CHART_PLOT_FULL_W; i++) {
+    s_chart_ph_full[i] = CHART_PH_INIT;
+    s_chart_do_full[i] = CHART_DO_MIN;
+  }
+  for (uint8_t i = 0; i < CHART_PLOT_HALF_W; i++) {
+    s_chart_ph_half[i] = CHART_PH_INIT;
+    s_chart_do_half[i] = CHART_DO_MIN;
+  }
+  s_chart_ph_full_cnt = 0;
+  s_chart_do_full_cnt = 0;
+  s_chart_ph_half_cnt = 0;
+  s_chart_do_half_cnt = 0;
+}
+
+static void chart_sync_mode(void) {
+  if (g_display_view != DISP_VIEW_CHART) {
+    return;
+  }
+  if (s_chart_last_view != g_display_view ||
+      s_chart_last_mode != g_display_mode) {
+    chart_reset_buffers();
+    s_chart_last_view = g_display_view;
+    s_chart_last_mode = g_display_mode;
+  }
+}
+
+static void chart_push_ltr(float *buf, uint8_t len, uint8_t *fill_cnt, float val) {
+  if (*fill_cnt < len) {
+    buf[*fill_cnt] = val;
+    (*fill_cnt)++;
+  } else {
+    memmove(buf, buf + 1, (len - 1) * sizeof(float));
+    buf[len - 1] = val;
+    *fill_cnt = len;
+  }
+}
+
+/* Vi tri X: ve TU TRAI SANG PHAI theo buoc co dinh (window diem).
+ *  - Diem cu nhat (idx = 0) o mep trai, diem moi hon dan sang phai.
+ *  - Khi chua day: ben phai de trong, "but" chay dan sang phai.
+ *  - Khi day (n == window): diem moi nhat cham mep phai, sau do troi.
+ */
+static uint8_t chart_x_ltr(uint8_t px, uint8_t pw, uint8_t idx, uint8_t window) {
+  if (window <= 1) {
+    return px;
+  }
+  uint16_t off = (uint16_t)idx * (uint16_t)(pw - 1) / (uint16_t)(window - 1);
+  if (off > (uint16_t)(pw - 1)) {
+    off = (uint16_t)(pw - 1);
+  }
+  return (uint8_t)(px + off);
+}
+
+static void chart_draw_dot(uint8_t cx, uint8_t cy) {
+  /* Cham nho 2x2 danh dau tung diem du lieu */
+  LCD_DrawPixel(cx, cy, LCD_COLOR_ON);
+  LCD_DrawPixel(cx + 1, cy, LCD_COLOR_ON);
+  LCD_DrawPixel(cx, cy + 1, LCD_COLOR_ON);
+  LCD_DrawPixel(cx + 1, cy + 1, LCD_COLOR_ON);
+}
+
+static void chart_draw_head_marker(uint8_t cx, uint8_t cy) {
+  if (cx > 0) {
+    cx--;
+  }
+  if (cy > 0) {
+    cy--;
+  }
+  LCD_FillRect(cx, cy, 3, 3, LCD_COLOR_ON);
+}
+
+
+
+/* Nhan truc X (ve tu trai sang phai, cua so thoi gian co dinh):
+ *  - "Dau but" (diem moi nhat = bay gio) DI CHUYEN tu trai sang phai;
+ *    moc thoi gian bay gio chay theo dau but.
+ *  - Moc ben trai la diem cu nhat dang hien tren bieu do.
+ *  - Co gio thuc (RTC/NTP) -> hien gio dong ho HH:MM; chua co -> tuoi (-m:ss..0).
+ */
+static void chart_draw_x_labels_ltr(uint8_t px, uint8_t pw, uint8_t axis_y,
+                                    uint8_t lbl_y, uint8_t window,
+                                    uint8_t point_cnt, bool compact) {
+  (void)lbl_y;
+  (void)window;
+  (void)point_cnt;
+  uint8_t divs = compact ? 2 : 4;   /* so vach chia nho tren truc X */
+
+  /* Vach chia nho tren truc X (luon ve de thay thang chia) */
+  for (uint8_t d = 0; d <= divs; d++) {
+    uint8_t x = (uint8_t)(px + (uint16_t)d * (pw - 1) / divs);
+    LCD_DrawVLine(x, (uint8_t)(axis_y - 1), 3, LCD_COLOR_ON);
+  }
+}
+
+static uint8_t chart_value_to_y(float val, float ymin, float ymax, uint8_t plot_y,
+                                uint8_t plot_h) {
+  if (val < ymin) {
+    val = ymin;
+  }
+  if (val > ymax) {
+    val = ymax;
+  }
+  float span = ymax - ymin;
+  if (span <= 0.0f) {
+    return plot_y;
+  }
+  float norm = (val - ymin) / span;
+  return (uint8_t)(plot_y + (plot_h - 1) * (1.0f - norm));
+}
+
+static void chart_draw_axis_number(uint8_t x, uint8_t y, float val) {
+  char buf[6];
+  int whole = (int)(val + 0.5f);
+  if (val == (float)((int)val) && whole >= 0 && whole <= 99) {
+    snprintf(buf, sizeof(buf), "%d", whole);
+  } else {
+    snprintf(buf, sizeof(buf), "%.1f", val);
+  }
+  LCD_DrawString(x, y, buf, LCD_COLOR_ON);
+}
+
+static float chart_ph_to_norm(float ph) {
+  if (ph <= CHART_PH_FOCUS_LO) {
+    return (ph / CHART_PH_FOCUS_LO) * CHART_PH_FRAC_LOW;
+  }
+  if (ph <= CHART_PH_FOCUS_HI) {
+    float t = (ph - CHART_PH_FOCUS_LO) / (CHART_PH_FOCUS_HI - CHART_PH_FOCUS_LO);
+    return CHART_PH_FRAC_LOW + t * CHART_PH_FRAC_MID;
+  }
+  float t = (ph - CHART_PH_FOCUS_HI) / (CHART_PH_AXIS_MAX - CHART_PH_FOCUS_HI);
+  if (t > 1.0f) {
+    t = 1.0f;
+  }
+  return CHART_PH_FRAC_LOW + CHART_PH_FRAC_MID + t * CHART_PH_FRAC_HIGH;
+}
+
+static uint8_t chart_ph_value_to_y(float ph, uint8_t plot_y, uint8_t plot_h) {
+  if (ph < CHART_PH_AXIS_MIN) {
+    ph = CHART_PH_AXIS_MIN;
+  }
+  if (ph > CHART_PH_AXIS_MAX) {
+    ph = CHART_PH_AXIS_MAX;
+  }
+  float norm = chart_ph_to_norm(ph);
+  return (uint8_t)(plot_y + (plot_h - 1) * (1.0f - norm));
+}
+
+static void chart_draw_ph_axis_labels(uint8_t area_x, uint8_t py, uint8_t ph,
+                                      bool compact) {
+  chart_draw_axis_number(area_x, py, CHART_PH_AXIS_MAX);
+  chart_draw_axis_number(area_x, (uint8_t)(py + ph - 7), CHART_PH_AXIS_MIN);
+  if (!compact) {
+    uint8_t y7 = chart_ph_value_to_y(7.0f, py, ph);
+    if (y7 > py + 2 && y7 < py + ph - 10) {
+      chart_draw_axis_number(area_x, (uint8_t)(y7 - 3), 7.0f);
+    }
+  }
+}
+
+static void lcd_draw_chart_panel(uint8_t area_x, uint8_t area_y, uint8_t area_w,
+                                 uint8_t area_h, const float *buf, uint8_t buf_len,
+                                 uint8_t fill_cnt, float ymin, float ymax,
+                                 const char *unit, bool compact, bool ph_piecewise) {
+  if (area_w < 20 || area_h < 14 || buf_len < 2) {
+    return;
+  }
+
+  const uint8_t px = (uint8_t)(area_x + CHART_Y_LBL_W);
+  const uint8_t py = area_y;
+  const uint8_t pw = (uint8_t)(area_w - CHART_Y_LBL_W - 1);
+  const uint8_t ph = (uint8_t)(area_h - CHART_X_LBL_H);
+  const uint8_t axis_y = (uint8_t)(py + ph);
+  const uint8_t lbl_y = (uint8_t)(area_y + area_h - 6);
+  const float ymid = (ymin + ymax) * 0.5f;
+
+  if (ph_piecewise) {
+    chart_draw_ph_axis_labels(area_x, py, ph, compact);
+  } else {
+    chart_draw_axis_number(area_x, py, ymax);
+    if (!compact) {
+      chart_draw_axis_number(area_x, (uint8_t)(py + ph / 2 - 3), ymid);
+    }
+    chart_draw_axis_number(area_x, (uint8_t)(py + ph - 7), ymin);
+  }
+
+  if (unit != NULL && !compact) {
+    LCD_DrawString(area_x, (uint8_t)(py + 8), unit, LCD_COLOR_ON);
+  } else if (unit != NULL && compact) {
+    uint8_t uw = lcd_text_width(unit);
+    LCD_DrawString((uint8_t)(area_x + area_w - uw - 2), py, unit, LCD_COLOR_ON);
+  }
+
+  LCD_DrawVLine(px, py, ph + 1, LCD_COLOR_ON);
+  LCD_DrawHLine(px, axis_y, pw, LCD_COLOR_ON);
+
+  chart_draw_x_labels_ltr(px, pw, axis_y, lbl_y, buf_len, fill_cnt, compact);
+
+  uint8_t n = fill_cnt;
+  if (n > buf_len) {
+    n = buf_len;
+  }
+
+  for (uint8_t i = 1; i < n; i++) {
+    uint8_t x0 = chart_x_ltr(px, pw, (uint8_t)(i - 1), buf_len);
+    uint8_t x1 = chart_x_ltr(px, pw, i, buf_len);
+    uint8_t y0;
+    uint8_t y1;
+    if (ph_piecewise) {
+      y0 = chart_ph_value_to_y(buf[i - 1], py, ph);
+      y1 = chart_ph_value_to_y(buf[i], py, ph);
+    } else {
+      y0 = chart_value_to_y(buf[i - 1], ymin, ymax, py, ph);
+      y1 = chart_value_to_y(buf[i], ymin, ymax, py, ph);
+    }
+    LCD_DrawLine(x0, y0, x1, y1, LCD_COLOR_ON);
+  }
+
+  /* Cham danh dau tung diem du lieu */
+  for (uint8_t i = 0; i < n; i++) {
+    uint8_t dx = chart_x_ltr(px, pw, i, buf_len);
+    uint8_t dy = ph_piecewise ? chart_ph_value_to_y(buf[i], py, ph)
+                              : chart_value_to_y(buf[i], ymin, ymax, py, ph);
+    chart_draw_dot(dx, dy);
+  }
+
+  if (n > 0) {
+    uint8_t hx = chart_x_ltr(px, pw, (uint8_t)(n - 1), buf_len);
+    uint8_t hy = ph_piecewise ? chart_ph_value_to_y(buf[n - 1], py, ph)
+                              : chart_value_to_y(buf[n - 1], ymin, ymax, py, ph);
+    chart_draw_head_marker(hx, hy);
+  }
+}
+
+static void lcd_draw_measurement_chart(float ph_val, float do_val, bool do_valid) {
+  /* Bieu do toan man hinh: tu y=CHART_AREA_TOP toi day man hinh (y=63) */
+  const uint8_t area_h = (uint8_t)(63 - CHART_AREA_TOP);
+
+  if (g_display_mode == DISP_MODE_PH) {
+    lcd_draw_chart_panel(4, CHART_AREA_TOP, 120, area_h, s_chart_ph_full,
+                         CHART_PLOT_FULL_W, s_chart_ph_full_cnt, CHART_PH_AXIS_MIN,
+                         CHART_PH_AXIS_MAX, NULL, false, true);
+  } else if (g_display_mode == DISP_MODE_DO) {
+    lcd_draw_chart_panel(4, CHART_AREA_TOP, 120, area_h, s_chart_do_full,
+                         CHART_PLOT_FULL_W, s_chart_do_full_cnt, CHART_DO_MIN,
+                         CHART_DO_MAX, NULL, false, false);
+  } else {
+    const uint8_t split_x = 64;
+    LCD_DrawVLine(split_x - 1, CHART_AREA_TOP, area_h + 1, LCD_COLOR_ON);
+    LCD_DrawVLine(split_x, CHART_AREA_TOP, area_h + 1, LCD_COLOR_ON);
+
+    lcd_draw_chart_panel(2, CHART_AREA_TOP, 60, area_h, s_chart_ph_half,
+                         CHART_PLOT_HALF_W, s_chart_ph_half_cnt, CHART_PH_AXIS_MIN,
+                         CHART_PH_AXIS_MAX, "pH", true, true);
+    if (do_valid) {
+      lcd_draw_chart_panel(66, CHART_AREA_TOP, 60, area_h, s_chart_do_half,
+                           CHART_PLOT_HALF_W, s_chart_do_half_cnt, CHART_DO_MIN,
+                           CHART_DO_MAX, "DO", true, false);
+    } else {
+      LCD_DrawRect(66, CHART_AREA_TOP, 60, area_h, LCD_COLOR_ON);
+      if (g_sys_lang == LANG_VI) {
+        LCD_DrawString(74, CHART_AREA_TOP + 12, "DO N/A", LCD_COLOR_ON);
+      } else {
+        LCD_DrawString(74, CHART_AREA_TOP + 12, "DO N/A", LCD_COLOR_ON);
+      }
+    }
+  }
+}
+
+static void lcd_draw_measurement_numbers(const char *ph_str, const char *do_str) {
+  if (g_display_mode == DISP_MODE_PH) {
+    uint8_t ph_w = LCD_GetStringWidth3x(ph_str);
+    uint8_t unit_w = lcd_text_width("pH");
+    uint8_t block_w = ph_w + 5 + unit_w;
+    uint8_t ph_x = (LCD_WIDTH - block_w) / 2;
+    LCD_DrawString3x(ph_x, 17, ph_str, LCD_COLOR_ON);
+    LCD_DrawString(ph_x + ph_w + 5, 30, "pH", LCD_COLOR_ON);
+  } else if (g_display_mode == DISP_MODE_DO) {
+    uint8_t do_w = LCD_GetStringWidth3x(do_str);
+    uint8_t unit_w = lcd_text_width("mg/L");
+    uint8_t block_w = do_w + 5 + unit_w;
+    uint8_t do_x = (LCD_WIDTH - block_w) / 2;
+    LCD_DrawString3x(do_x, 17, do_str, LCD_COLOR_ON);
+    LCD_DrawString(do_x + do_w + 5, 30, "mg/L", LCD_COLOR_ON);
+  } else {
+    const uint8_t split_x = 64;
+    const uint8_t left_x = 2;
+    const uint8_t right_x = 65;
+    const uint8_t panel_w = 61;
+    const uint8_t area_y = 11;
+    const uint8_t area_bottom = 45;
+    const uint8_t val_y = 14;
+    const uint8_t unit_y = 34;
+
+    /* Clear panel display area to eliminate leftover pixel artifacts */
+    LCD_FillRect(left_x, area_y, panel_w, area_bottom - area_y, LCD_COLOR_OFF);
+    LCD_FillRect(right_x, area_y, panel_w, area_bottom - area_y, LCD_COLOR_OFF);
+
+    LCD_DrawVLine(split_x - 1, area_y, area_bottom - area_y + 1, LCD_COLOR_ON);
+    LCD_DrawVLine(split_x, area_y, area_bottom - area_y + 1, LCD_COLOR_ON);
+    LCD_DrawHLine(left_x, area_bottom, panel_w, LCD_COLOR_ON);
+    LCD_DrawHLine(right_x, area_bottom, panel_w, LCD_COLOR_ON);
+
+    lcd_draw_dual_metric(left_x, panel_w, val_y, unit_y, ph_str, "pH", false);
+    lcd_draw_dual_metric(right_x, panel_w, val_y, unit_y, do_str, "mg/L", false);
+  }
+}
+
+static void lcd_draw_top_bar_value(const char *ph_str, const char *do_str) {
+  char header[24];
+  if (g_display_mode == DISP_MODE_PH) {
+    snprintf(header, sizeof(header), "pH %s", ph_str);
+  } else if (g_display_mode == DISP_MODE_DO) {
+    snprintf(header, sizeof(header), "DO %s mg/L", do_str);
+  } else {
+    snprintf(header, sizeof(header), "p:%s d:%s", ph_str, do_str);
+  }
+  LCD_DrawString(4, 1, header, LCD_COLOR_OFF);
 }
 
 /* =====================================================================
@@ -540,12 +1059,20 @@ static void lcd_demo_task(void *arg) {
   /* ── Khởi tạo nút bấm ── */
   menu_init();
 
-  /* ── Hiển thị màn hình khởi động (Boot screen) trong 5 giây ── */
+  /* ── Hiển thị màn hình khởi động (Boot screen) ── */
   LCD_Clear();
   // Vẽ logo màn hình khởi động tùy chỉnh (128x64) tràn viền
   LCD_DrawBitmap(0, 0, 128, 64, bitmap_custom);
   LCD_Flush();
+
+#if 0 /* GIẢ LẬP: Treo ở màn hình khởi động để test webserver (Sửa 1 -> 0 khi muốn chạy bình thường) */
+  ESP_LOGW(TAG, "GIA LAP: Dang treo o man hinh khoi dong de test Webserver...");
+  while (1) {
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+#else
   vTaskDelay(pdMS_TO_TICKS(5000));
+#endif
 
   /* Tải cấu hình lưu từ NVS */
   menu_load_settings();
@@ -560,7 +1087,8 @@ static void lcd_demo_task(void *arg) {
   char ph_str[10] = "7.00";
   char do_str[12] = "0.00";
   char do_sat_str[16] = "Sat: --.-%";
-  char temp_str[12] = "25.3 C";
+  char temp_val_num_str[10] = "25.3";
+  char unit_char = 'C';
   char time_str[32] = "--:-- --";
   char date_str[32] = "2026-05-22";
 
@@ -568,8 +1096,8 @@ static void lcd_demo_task(void *arg) {
     /* ── 1. Xử lý nút bấm ── */
     menu_handle_buttons();
 
-    /* ── 2. Nếu đang ở menu → render menu và lặp lại ── */
-    if (g_menu.in_menu) {
+    /* ── 2. Nếu đang nhập PIN hoặc menu → render và lặp lại ── */
+    if (g_menu.in_pin_entry || g_menu.in_menu) {
       menu_render();
       vTaskDelay(pdMS_TO_TICKS(50));
       tick = 0;                 /* reset tick khi vừa thoát menu */
@@ -614,14 +1142,16 @@ static void lcd_demo_task(void *arg) {
           snprintf(do_sat_str, sizeof(do_sat_str), "Sat: N/A");
         }
       }
-    //   snprintf(temp_str, sizeof(temp_str), "%.1f C", temp_val);
-    bool is_f = (g_temp_mode == TEMP_MODE_ATC_F || g_temp_mode == TEMP_MODE_MTC_F);
-        if (is_f) {
-            float temp_val_f = temp_val * 1.8f + 32.0f;
-            snprintf(temp_str, sizeof(temp_str), "%.1f F", temp_val_f);
-        } else {
-            snprintf(temp_str, sizeof(temp_str), "%.1f C", temp_val);
-        }
+      bool is_f = (g_temp_mode == TEMP_MODE_ATC_F || g_temp_mode == TEMP_MODE_MTC_F);
+      if (temp_val < -20.0f || temp_val > 150.0f) {
+        snprintf(temp_val_num_str, sizeof(temp_val_num_str), "25.0");
+      } else if (is_f) {
+        float temp_val_f = temp_val * 1.8f + 32.0f;
+        snprintf(temp_val_num_str, sizeof(temp_val_num_str), "%.1f", temp_val_f);
+      } else {
+        snprintf(temp_val_num_str, sizeof(temp_val_num_str), "%.1f", temp_val);
+      }
+      unit_char = is_f ? 'F' : 'C';
 
       // Đọc thời gian thực tế từ hệ thống
       time_t now;
@@ -660,78 +1190,87 @@ static void lcd_demo_task(void *arg) {
 
       g_lcd_need_redraw = true;
     }
+
+    if (g_display_view == DISP_VIEW_CHART) {
+      chart_sync_mode();
+      if (tick == 0) {
+        if (g_display_mode == DISP_MODE_PH) {
+          chart_push_ltr(s_chart_ph_full, CHART_PLOT_FULL_W, &s_chart_ph_full_cnt,
+                         ph_val);
+        } else if (g_display_mode == DISP_MODE_DO && do_valid) {
+          chart_push_ltr(s_chart_do_full, CHART_PLOT_FULL_W, &s_chart_do_full_cnt,
+                         do_val);
+        } else if (g_display_mode == DISP_MODE_DUAL) {
+          chart_push_ltr(s_chart_ph_half, CHART_PLOT_HALF_W, &s_chart_ph_half_cnt,
+                         ph_val);
+          if (do_valid) {
+            chart_push_ltr(s_chart_do_half, CHART_PLOT_HALF_W, &s_chart_do_half_cnt,
+                           do_val);
+          }
+        }
+        g_lcd_need_redraw = true;
+      }
+    } else {
+      s_chart_last_view = g_display_view;
+      s_chart_last_mode = g_display_mode;
+    }
     tick = (tick + 1) % 20;
 
     if (g_lcd_need_redraw) {
       /* Vẽ màn hình đo lường
        * ─────────────────────────────────────────────────────────────
        *  y= 0..11 : Top bar    (nền đen, chữ trắng)
-       *  y=12..43 : Giá trị pH lớn / DO lớn / Song song
-       *  y=44..63 : Bottom bar (nền đen, chữ trắng)
+       *  y=12..45 : Giá trị pH lớn / DO lớn / Song song
+       *  y=46..63 : Bottom bar (nền đen, chữ trắng)
        * ─────────────────────────────────────────────────────────────
        */
       LCD_Clear();
 
-      /* Top bar */
-      LCD_FillRect(0, 0, 128, 10, LCD_COLOR_ON);
-      if (g_sys_lang == LANG_VI) {
-        LCD_DrawString(4, 1, "Dang Do...", LCD_COLOR_OFF);
-      } else {
-        LCD_DrawString(4, 1, "Measuring", LCD_COLOR_OFF);
-      }
+      if (g_display_view == DISP_VIEW_CHART) {
+        /* ── Che do bieu do TOAN MAN HINH ──
+         *  y=0..9  : Top bar (gia tri hien tai + nhiet do)
+         *  y=12..63: Bieu do phu gan het man hinh
+         */
+        LCD_FillRect(0, 0, 128, 10, LCD_COLOR_ON);
+        lcd_draw_top_bar_value(ph_str, do_str);
+        /* Nhiệt độ góc phải top bar trong chế độ đồ thị (có biểu tượng °) */
+        {
+          uint8_t num_w = (uint8_t)(strlen(temp_val_num_str) * 6);
+          uint8_t total_w = num_w + 12;
+          uint8_t tx = (total_w + 8 < 128) ? (uint8_t)(128 - total_w - 4) : 90;
 
-      if (g_display_mode == DISP_MODE_DUAL) {
-        // Trong chế độ song song, vẽ nhiệt độ ở góc trên bên phải của top bar thay cho RS485
-        LCD_DrawString(88, 1, temp_str, LCD_COLOR_OFF);
-        int unit_idx = 0;
-        while (temp_str[unit_idx] != '\0' && temp_str[unit_idx] != 'C' &&
-               temp_str[unit_idx] != 'F') {
-          unit_idx++;
+          LCD_DrawString(tx, 1, temp_val_num_str, LCD_COLOR_OFF);
+
+          uint8_t degree_x = tx + num_w + 1;
+          LCD_DrawPixel(degree_x, 1, LCD_COLOR_OFF);
+          LCD_DrawPixel(degree_x + 1, 1, LCD_COLOR_OFF);
+          LCD_DrawPixel(degree_x, 2, LCD_COLOR_OFF);
+          LCD_DrawPixel(degree_x + 1, 2, LCD_COLOR_OFF);
+
+          char unit_buf[2] = { unit_char, '\0' };
+          LCD_DrawString(tx + num_w + 6, 1, unit_buf, LCD_COLOR_OFF);
         }
-        int degree_x = 88 + unit_idx * 6 - 5;
-        LCD_DrawPixel(degree_x, 1, LCD_COLOR_OFF);
-        LCD_DrawPixel(degree_x + 1, 1, LCD_COLOR_OFF);
-        LCD_DrawPixel(degree_x, 2, LCD_COLOR_OFF);
-        LCD_DrawPixel(degree_x + 1, 2, LCD_COLOR_OFF);
+        lcd_draw_measurement_chart(ph_val, do_val, do_valid);
       } else {
+        /* ── Che do so ── */
+        /* Top bar */
+        LCD_FillRect(0, 0, 128, 10, LCD_COLOR_ON);
+        if (g_sys_lang == LANG_VI) {
+          LCD_DrawString(4, 1, "MebiEco", LCD_COLOR_OFF);
+        } else {
+          LCD_DrawString(4, 1, "MebiEco", LCD_COLOR_OFF);
+        }
         LCD_DrawString(80, 1, "RS485", LCD_COLOR_OFF);
-      }
 
-      /* Đường viền dọc vùng giữa (2px mỗi bên) */
-      LCD_DrawVLine(0, 10, 36, LCD_COLOR_ON);
-      LCD_DrawVLine(1, 10, 36, LCD_COLOR_ON);
-      LCD_DrawVLine(126, 10, 36, LCD_COLOR_ON);
-      LCD_DrawVLine(127, 10, 36, LCD_COLOR_ON);
+        /* Đường viền dọc vùng giữa (2px mỗi bên) */
+        LCD_DrawVLine(0, 10, 36, LCD_COLOR_ON);
+        LCD_DrawVLine(1, 10, 36, LCD_COLOR_ON);
+        LCD_DrawVLine(126, 10, 36, LCD_COLOR_ON);
+        LCD_DrawVLine(127, 10, 36, LCD_COLOR_ON);
 
-      if (g_display_mode == DISP_MODE_PH) {
-        /* Giá trị pH lớn sử dụng Arial Bold */
-        uint8_t ph_width = LCD_GetLargeStringWidth(ph_str);
-        uint8_t ph_x = (LCD_WIDTH - ph_width - 14) / 2; // Căn giữa, trừ 14px cho "pH"
-        LCD_DrawLargeString(ph_x, 14, ph_str, LCD_COLOR_ON);
-        LCD_DrawString(ph_x + ph_width + 3, 33, "pH", LCD_COLOR_ON);
-      } else if (g_display_mode == DISP_MODE_DO) {
-        /* Giá trị DO lớn sử dụng Arial Bold (bao gồm cả "---" khi không hợp lệ) */
-        uint8_t do_width = LCD_GetLargeStringWidth(do_str);
-        uint8_t do_x = (LCD_WIDTH - do_width - 25) / 2; // Căn giữa, trừ 25px cho "mg/L"
-        LCD_DrawLargeString(do_x, 14, do_str, LCD_COLOR_ON);
-        LCD_DrawString(do_x + do_width + 3, 33, "mg/L", LCD_COLOR_ON);
-      } else { // DISP_MODE_DUAL
-        /* Hiển thị song song pH và DO đều dùng Arial Bold */
-        // 1. Dòng 1: pH (y=11)
-        uint8_t ph_width = LCD_GetLargeStringWidth(ph_str);
-        uint8_t ph_x = (128 - ph_width - 15) / 2;
-        LCD_DrawLargeString(ph_x, 11, ph_str, LCD_COLOR_ON);
-        LCD_DrawString(ph_x + ph_width + 3, 30, "pH", LCD_COLOR_ON);
+        lcd_draw_measurement_numbers(ph_str, do_str);
 
-        // 2. Dòng 2: DO (y=36)
-        uint8_t do_width = LCD_GetLargeStringWidth(do_str);
-        uint8_t do_x = (128 - do_width - 25) / 2;
-        LCD_DrawLargeString(do_x, 36, do_str, LCD_COLOR_ON);
-        LCD_DrawString(do_x + do_width + 3, 55, "mg/L", LCD_COLOR_ON);
-      }
-
-      if (g_display_mode != DISP_MODE_DUAL) {
-        /* Bottom bar (Chỉ vẽ cho chế độ đo đơn để không bị đè chữ) */
+        /* Bottom bar (Nền đen, chữ trắng) */
         LCD_FillRect(0, 46, 128, 18, LCD_COLOR_ON);
         if (g_display_mode == DISP_MODE_PH)
         {
@@ -745,21 +1284,42 @@ static void lcd_demo_task(void *arg) {
           }
         }
         else
-        { // DISP_MODE_DO
+        { // DISP_MODE_DO hoặc DISP_MODE_DUAL
           LCD_DrawString(4, 47, do_sat_str, LCD_COLOR_OFF);
         }
-        /* Ký hiệu độ (2×2 px) đặt động trước ký tự đơn vị (C hoặc F) */
-        LCD_DrawString(85, 47, temp_str, LCD_COLOR_OFF);
-        int unit_idx = 0;
-        while (temp_str[unit_idx] != '\0' && temp_str[unit_idx] != 'C' &&
-               temp_str[unit_idx] != 'F') {
-          unit_idx++;
+        /* Hiển thị số nhiệt độ căn chuẩn khớp với chuỗi giờ bên dưới (chữ số lẻ sau . ở x = 100) */
+        char int_part[10] = {0};
+        char frac_char[2] = {0, 0};
+        char *dot_ptr = strchr(temp_val_num_str, '.');
+        if (dot_ptr) {
+          int len_int = dot_ptr - temp_val_num_str;
+          strncpy(int_part, temp_val_num_str, len_int);
+          int_part[len_int] = '\0';
+          frac_char[0] = dot_ptr[1];
+        } else {
+          strcpy(int_part, temp_val_num_str);
+          frac_char[0] = '0';
         }
-        int degree_x = 85 + unit_idx * 6 - 5;
-        LCD_DrawPixel(degree_x, 47, LCD_COLOR_OFF);
-        LCD_DrawPixel(degree_x + 1, 47, LCD_COLOR_OFF);
-        LCD_DrawPixel(degree_x, 48, LCD_COLOR_OFF);
-        LCD_DrawPixel(degree_x + 1, 48, LCD_COLOR_OFF);
+
+        uint8_t int_w = (uint8_t)(strlen(int_part) * 6);
+        uint8_t int_x = 94 - int_w;
+
+        /* Phần nguyên (giãn về bên trái) */
+        LCD_DrawString(int_x, 47, int_part, LCD_COLOR_OFF);
+        /* Dấu chấm (.) */
+        LCD_DrawString(94, 47, ".", LCD_COLOR_OFF);
+        /* Số thập phân sau dấu chấm (khớp thẳng đứng với số phút thứ 2 tại x = 100) */
+        LCD_DrawString(100, 47, frac_char, LCD_COLOR_OFF);
+
+        /* Ký hiệu độ (2x2 px) tại x = 106 */
+        LCD_DrawPixel(106, 47, LCD_COLOR_OFF);
+        LCD_DrawPixel(107, 47, LCD_COLOR_OFF);
+        LCD_DrawPixel(106, 48, LCD_COLOR_OFF);
+        LCD_DrawPixel(107, 48, LCD_COLOR_OFF);
+
+        /* Chữ đơn vị C/F tại x = 111 */
+        char unit_str_buf[2] = { unit_char, '\0' };
+        LCD_DrawString(111, 47, unit_str_buf, LCD_COLOR_OFF);
         LCD_DrawString(4, 56, date_str, LCD_COLOR_OFF);
         LCD_DrawString(76, 56, time_str, LCD_COLOR_OFF);
       }
@@ -772,18 +1332,18 @@ static void lcd_demo_task(void *arg) {
   }
 }
 
-void LCD_Start_Task(void) {
+__attribute__((unused)) void LCD_Start_Task(void) {
   xTaskCreatePinnedToCore(lcd_demo_task, "LCD_Task", 4096, NULL, 5, NULL, 1);
 }
 
-void screen_update_values(float ph, float temp) {
+__attribute__((unused)) void screen_update_values(float ph, float temp) {
   s_real_ph = ph;
   s_real_temp = temp;
   g_lcd_need_redraw =
       true; // Báo hiệu để task vẽ lại màn hình ngay khi có dữ liệu mới
 }
 
-void LCD_GetFramebuffer(uint8_t *dest) {
+__attribute__((unused)) void LCD_GetFramebuffer(uint8_t *dest) {
   if (dest != NULL) {
     memcpy(dest, fb, sizeof(fb));
   }

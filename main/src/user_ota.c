@@ -9,6 +9,8 @@
 #include <string.h>
 #include "esp_crt_bundle.h"
 #include "user_azure.h"
+#include "user_storage.h"
+
 
 EventGroupHandle_t otaEventGroup;
 static bool s_ota_use_auth_header = true;
@@ -242,6 +244,10 @@ void User_Ota_Task(void *pvParameters)
     if(ret == ESP_OK)
     {
         g_ota_status = OTA_STATUS_SUCCESS;
+     
+        // Ghi nhận thành công vào NVS trước khi reboot
+        Nvs_Write_String("ota_res", "success");
+        Nvs_Write_String("ota_err", "None");
         ESP_LOGI("OTA", "OTA Succeed, Rebooting in 2s...");
         vTaskDelay(pdMS_TO_TICKS(2000));
         esp_restart();
@@ -252,6 +258,9 @@ void User_Ota_Task(void *pvParameters)
         if (strlen(g_ota_err_desc) == 0) {
             strncpy(g_ota_err_desc, "Download failed", sizeof(g_ota_err_desc) - 1);
         }
+        // Ghi nhận thất bại và nguyên nhân vào NVS trước khi reboot
+        Nvs_Write_String("ota_res", "failed");
+        Nvs_Write_String("ota_err", g_ota_err_desc);
         ESP_LOGE("OTA", "Firmware upgrade failed! Restarting system in 3s...");
         vTaskDelay(pdMS_TO_TICKS(3000));
         esp_restart();

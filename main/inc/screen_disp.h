@@ -202,6 +202,9 @@ void LCD_DrawChar(uint8_t x, uint8_t y, char c, uint8_t color);
  */
 void LCD_DrawString(uint8_t x, uint8_t y, const char *str, uint8_t color);
 
+void LCD_DrawCharClipped(int16_t x, int16_t y, char c, uint8_t min_x, uint8_t max_x, uint8_t color);
+void LCD_DrawStringScroll(uint8_t x, uint8_t y, const char *str, uint8_t max_x, int16_t scroll_x, uint8_t color);
+
 /**
  * @brief  Hiển thị 1 ký tự ASCII phóng to theo tỉ lệ scale_x và scale_y
  */
@@ -263,6 +266,10 @@ void LCD_DrawLargeString(uint8_t x, uint8_t y, const char *str, uint8_t color);
  * @return Tổng chiều rộng pixel (bao gồm khoảng cách 1px giữa các ký tự)
  */
 uint8_t LCD_GetLargeStringWidth(const char *str);
+
+uint8_t LCD_DrawMediumChar(uint8_t x, uint8_t y, char c, uint8_t color);
+void LCD_DrawMediumString(uint8_t x, uint8_t y, const char *str, uint8_t color);
+uint8_t LCD_GetMediumStringWidth(const char *str);
 
 /* =====================================================================
  * API – FreeRTOS Task

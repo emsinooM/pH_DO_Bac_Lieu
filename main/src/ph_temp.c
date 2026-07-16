@@ -17,16 +17,16 @@ float g_temp_offset = 0.0f;
 
 // Đối tượng hiệu chuẩn toàn cục dùng chung cho hệ thống
 PhCalibration_t ph_cal = {
-    .ph7_voltage_mv = 24.2f,
+    .ph7_voltage_mv = 4.77f,
     .ph7_temp_c = 25.0f,
-    .ph4_voltage_mv = 195.6f,
+    .ph4_voltage_mv = 175.53f,
     .ph4_temp_c = 25.0f,
     .ph10_voltage_mv = -177.0f,
     .ph10_temp_c = 25.0f,
     .ph10_target = 10.00f,
-    .slope_norm = 0.015f,
-    .slope_high = 0.015f,
-    .u7 = 0.081f,
+    .slope_norm = -5.238f,
+    .slope_high = -5.238f,
+    .u7 = 0.016f,
     .cal_type = 2,
     .is_calibrated = false
 };
@@ -52,7 +52,7 @@ void update_ph_calibration(PhCalibration_t *cal) {
         
         if (low_ok && high_ok) {
             cal->slope_norm = (mid_target - 4.00f) / (cal->u7 - u4);
-            cal->slope_high = (cal->ph10_target - mid_target) / (cal->u7 - u10);
+            cal->slope_high = (cal->ph10_target - mid_target) / (u10 - cal->u7);
             cal->is_calibrated = true;
             ESP_LOGI(TAG, "Hiệu chuẩn 3 điểm thành công! Slope_low: %.4f, Slope_high: %.4f, U7: %.4f",
                      cal->slope_norm, cal->slope_high, cal->u7);
@@ -84,15 +84,8 @@ float calculate_temperature(int32_t raw_adc, bool is_pt1000) {
     if (is_pt1000) {
         float ratio = V_REF_BRIDGE  / v_diff;
         if (ratio < 1.0f) ratio = 1.0f; // Tránh điện trở âm bất thường
-        // 1. Đây là điện trở lỗi (bị gặm dòng) mà mạch đang tính ra (~1068 Ohm)
-        // float r_measured = R_CALIB * (ratio - 1.0f);
-        // float r_pt1000 = (30690.0f * r_measured) / (30690.0f - r_measured);
-
         float r_pt1000 = R_CALIB * (ratio - 1.0f);
-
-    
-    // 3. Đổi ra nhiệt độ chuẩn
-    return (r_pt1000 - 1000.0f) / 3.9083f;
+        return (r_pt1000 - 1000.0f) / 3.9083f;
     } else {
         float v_ntc = V_REF_BRIDGE  + v_diff;
         if (v_ntc <= 0.0f) v_ntc = 1e-6f;
@@ -113,7 +106,7 @@ float calculate_temperature(int32_t raw_adc, bool is_pt1000) {
 
 float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, float temp_c, float *out_v_probe_mv) {
     float v_diff = ((float)raw_adc * V_REF_ADC) / ADC_DIVISOR;
-    float v_probe =  v_diff * 2.04f; // Giải mã điện áp đầu dò thực tế (Khử offset và bù hệ số suy hao 0.5 của Op-Amp)
+    float v_probe =  v_diff * 2.0f; // Giải mã điện áp đầu dò thực tế (Khử offset và bù hệ số suy hao 0.5 của Op-Amp)
 
     float v_probe_mv = v_probe * 1000.0f;
     
@@ -366,4 +359,25 @@ bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_
     Save_Calibration_To_Storage(&ph_cal);
     Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.temperature, s_sensor_status.v_probe_mv);
     return true;
+}
+
+bool Reset_PH_Calibration(void) {
+    ESP_LOGI(TAG, "Yêu cầu khôi phục cài đặt gốc hiệu chuẩn pH...");
+    
+    ph_cal.ph7_voltage_mv = 4.77f;
+    ph_cal.ph7_temp_c = 25.0f;
+    ph_cal.ph4_voltage_mv = 175.53f;
+    ph_cal.ph4_temp_c = 25.0f;
+    ph_cal.ph10_voltage_mv = -177.0f;
+    ph_cal.ph10_temp_c = 25.0f;
+    ph_cal.ph10_target = 10.00f;
+    ph_cal.cal_type = 2;
+    ph_cal.is_calibrated = false;
+    
+    update_ph_calibration(&ph_cal);
+    ph_cal.is_calibrated = false; // Buộc trạng thái về chưa hiệu chuẩn thực tế
+    
+    bool ok = Save_Calibration_To_Storage(&ph_cal);
+    Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.temperature, s_sensor_status.v_probe_mv);
+    return ok;
 }

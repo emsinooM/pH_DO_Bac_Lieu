@@ -15,9 +15,7 @@
 #include "esp_app_format.h"
 #include "ds3231.h"
 
-#include "esp_event.h"
 #include "esp_wifi.h"
-#include "tcp_server_com.h"
 
 /* Khai báo các Task Handle từ main để theo dõi */
 extern TaskHandle_t Azure_Task_Handle;
@@ -208,7 +206,6 @@ void User_Time_Task(void)
 
             Sys_Info.isTimeSyncCb = false;
             time(&Sys_Info.epochtime);
-            TCP_Handle.epochtime = Sys_Info.epochtime;
             // gpio_set_level(IO_LED_EXTBOARD_PIN, state);
         }
 

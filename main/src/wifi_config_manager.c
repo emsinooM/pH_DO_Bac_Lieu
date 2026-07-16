@@ -11,9 +11,9 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "user_system.h"
-#include "tcp_server_com.h"
 #include "esp_mac.h"
 #include "esp_http_server.h"
+#include "mdns.h"
 
  
 
@@ -21,6 +21,7 @@ static char s_ap_ssid[32] = {0}; // Lưu SSID đã ghép
 static const char *WIFI_CFG_TAG = "wifi_cfg";
 static int s_retry_num = 0;
 static bool s_allow_sta_connect = false;
+static bool s_was_allow_sta_connect = false;
 static TaskHandle_t s_connect_task = NULL;
 static TaskHandle_t s_slow_retry_task = NULL;
 static char s_pending_ssid[32] = {0};
@@ -120,6 +121,55 @@ static void prv_wifi_connect(const char *ssid, const char *pass)
 
  }
 
+/**
+ * @brief Khởi tạo mDNS với hostname duy nhất dạng mebieco-xxxxxx.local
+ */
+static void prv_mdns_init(void)
+{
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
+    {
+        ESP_LOGE(WIFI_CFG_TAG, "mDNS Init failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    uint8_t mac[6] = {0};
+    char hostname[32] = "mebieco";
+    
+    // Đọc MAC address từ interface STA để đồng bộ với mạng Wifi kết nối
+    err = esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    if (err == ESP_OK)
+    {
+        snprintf(hostname, sizeof(hostname), "mebieco-%02x%02x%02x", mac[3], mac[4], mac[5]);
+    }
+    else
+    {
+        ESP_LOGW(WIFI_CFG_TAG, "Failed to read STA MAC for mDNS hostname, using default");
+    }
+
+    err = mdns_hostname_set(hostname);
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_CFG_TAG, "Failed to set mDNS hostname: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(WIFI_CFG_TAG, "mDNS Hostname set/updated: %s.local", hostname);
+    }
+
+    err = mdns_instance_name_set("Mebico pH/DO Sensor");
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_CFG_TAG, "Failed to set mDNS instance name: %s", esp_err_to_name(err));
+    }
+
+    // Đăng ký dịch vụ HTTP cổng 80 (xóa cũ nếu có để làm mới quảng bá trên các interface vừa active)
+    if (mdns_service_exists("_http", "_tcp", NULL))
+    {
+        mdns_service_remove("_http", "_tcp");
+    }
+    err = mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_CFG_TAG, "Failed to add HTTP service to mDNS: %s", esp_err_to_name(err));
+    }
+}
+
 static void prv_build_ap_config(wifi_config_t *ap_config)
 {
 #if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
@@ -217,6 +267,7 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
         Sys_Info.isWifiConnected = true;
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(WIFI_CFG_TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        prv_mdns_init(); // Gọi lại để cập nhật/phát sóng tên miền trên interface STA khi có IP mới
     }
 }
 
@@ -267,13 +318,6 @@ bool wifi_config_manager_save(const char *ssid, const char *pass)
     nvs_close(my_handle);
 
     if (err != ESP_OK) return false;
-
-    memset(TCP_Handle.ssid, 0, sizeof(TCP_Handle.ssid));
-    memset(TCP_Handle.pass, 0, sizeof(TCP_Handle.pass));
-    strncpy(TCP_Handle.ssid, ssid, sizeof(TCP_Handle.ssid) - 1);
-    if (pass != NULL) {
-        strncpy(TCP_Handle.pass, pass, sizeof(TCP_Handle.pass) - 1);
-    }
 
     strncpy(s_pending_ssid, ssid, sizeof(s_pending_ssid) - 1);
     if (pass != NULL) {
@@ -372,8 +416,28 @@ void wifi_config_manager_schedule_connect(void)
 
 void wifi_config_manager_prepare_scan(void)
 {
-    // No-op: keep AP running to avoid dropping HTTP connection during scan.
+    if (!Sys_Info.isWifiConnected)
+    {
+        ESP_LOGI(WIFI_CFG_TAG, "Pausing auto-connect for WiFi scan...");
+        s_was_allow_sta_connect = s_allow_sta_connect;
+        s_allow_sta_connect = false;
+        esp_wifi_disconnect();
+        // Wait a short moment (500ms) for the Wi-Fi driver to fully stop connection attempts
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
 }
+
+void wifi_config_manager_finish_scan(void)
+{
+    if (!Sys_Info.isWifiConnected && s_was_allow_sta_connect)
+    {
+        ESP_LOGI(WIFI_CFG_TAG, "Resuming auto-connect after WiFi scan...");
+        s_allow_sta_connect = true;
+        s_retry_num = 0;
+        esp_wifi_connect();
+    }
+}
+
 
 bool wifi_config_manager_init(void)
 {
@@ -452,8 +516,6 @@ bool wifi_config_manager_init(void)
 
     if(has_saved)
     {
-        strncpy(TCP_Handle.ssid, ssid, sizeof(TCP_Handle.ssid) - 1);
-        strncpy(TCP_Handle.pass, pass, sizeof(TCP_Handle.pass) - 1);
         prv_wifi_connect(ssid, pass);
         ESP_LOGI(WIFI_CFG_TAG, "Saved WiFi found, AP+STA enabled");
     }
@@ -463,6 +525,7 @@ bool wifi_config_manager_init(void)
     }
 
     ESP_LOGI(WIFI_CFG_TAG, "AP started SSID:%s", s_ap_ssid);
+    prv_mdns_init();
     return true;
 }
 

@@ -1,0 +1,880 @@
+\documentclass[12pt,a4paper]{article}
+
+% ====== CÀI ĐẶT FONT VÀ NGÔN NGỮ ======
+\usepackage{fontspec}
+% Đặt font hệ thống Times New Roman cho XeLaTeX/LuaLaTeX
+\setmainfont{Times New Roman}
+
+\usepackage[vietnamese]{babel}
+
+% ====== CÀI ĐẶT TRANG VÀ ĐỊNH DẠNG ======
+\usepackage{geometry}
+\geometry{
+    top=2cm, 
+    bottom=2cm, 
+    left=2.5cm, 
+    right=2cm
+}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Hướng Dẫn Sử Dụng Thiết Bị MebiEco},
+}
+
+% ====== CÁC GÓI BỔ TRỢ ======
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{enumitem}
+
+% ====== TẠO CÁC HỘP THÔNG BÁO (CALLOUTS) ======
+\usepackage[many]{tcolorbox}
+\newtcolorbox{notebox}[1][]{colback=blue!5!white, colframe=blue!75!black, fonttitle=\bfseries, title=Ghi chú (NOTE), #1}
+\newtcolorbox{importantbox}[1][]{colback=purple!5!white, colframe=purple!75!black, fonttitle=\bfseries, title=Quan trọng (IMPORTANT), #1}
+\newtcolorbox{warningbox}[1][]{colback=orange!5!white, colframe=orange!75!black, fonttitle=\bfseries, title=Cảnh báo (WARNING), #1}
+\newtcolorbox{cautionbox}[1][]{colback=red!5!white, colframe=red!75!black, fonttitle=\bfseries, title=Đặc biệt lưu ý (CAUTION), #1}
+\newtcolorbox{tipbox}[1][]{colback=green!5!white, colframe=green!75!black, fonttitle=\bfseries, title=Mẹo (TIP), #1}
+
+% Khung bo viền giả lập màn hình LCD
+\newtcolorbox{lcdbox}[1][]{colback=gray!4!white, colframe=black!80!white, arc=3.5mm, boxrule=1.2pt, left=2mm, right=2mm, top=2mm, bottom=2mm, #1}
+
+% Tăng khoảng cách dòng trong bảng
+\renewcommand{\arraystretch}{1.3}
+
+\begin{document}
+
+% ====== TRANG BÌA ======
+\title{\textbf{Hướng Dẫn Sử Dụng Thiết Bị\\Giám Sát Chất Lượng Nước MebiEco}}
+\author{}
+\date{
+    \textbf{Mã sản phẩm:} ESP32-S3 pH/DO/Temperature Monitoring System\\
+    \textbf{Phiên bản tài liệu:} 1.0\\
+    \textbf{Ngày cập nhật:} 15/07/2026
+}
+\maketitle
+\thispagestyle{empty} % Không đánh số trang ở trang bìa
+
+\tableofcontents
+\newpage
+
+% ====== NỘI DUNG CHÍNH ======
+
+\section{Giới Thiệu Tổng Quan}
+
+Thiết bị \textbf{MebiEco} là hệ thống giám sát chất lượng nước công nghiệp, đo lường 3 thông số chính:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|l|l|X|}
+\hline
+\textbf{Thông số} & \textbf{Phạm vi đo} & \textbf{Đơn vị} & \textbf{Giao diện cảm biến} \\ \hline
+\textbf{pH} & 0.00 -- 14.00 & pH & Đầu dò điện cực thủy tinh qua ADC CS1237 24-bit \\ \hline
+\textbf{DO (Oxy hòa tan)} & 0.00 -- 20.00 & mg/L & Cảm biến quang học Modbus RS485 (KOG206) \\ \hline
+\textbf{Nhiệt độ} & -20.0 -- 150.0 & $^\circ$C / $^\circ$F & Cảm biến PT1000 / NTC \\ \hline
+\end{tabularx}
+\end{table}
+
+\textbf{Màn hình:} LCD đồ họa đơn sắc \textbf{128$\times$64 pixel} (GMG12864-06D), hiển thị rõ nét dưới ánh sáng mạnh.
+
+%------------------------------------------------
+
+\section{Bố Cục Nút Bấm Và Chức Năng}
+
+Thiết bị có \textbf{5 nút bấm vật lý} nằm trên mặt trước:
+
+\begin{lcdbox}
+\begin{verbatim}
+ ┌───────────────────────────────────────────────────────┐
+ │                                                       │
+ │               [ MÀN HÌNH LCD 128×64 ]                 │
+ │                                                       │
+ ├───────────────────────────────────────────────────────┤
+ │                                                       │
+ │   [ESC]   [DOWN ▼]   [UP ▲]   [RIGHT ►]   [ENTER ✓]   │
+ │                                                       │
+ └───────────────────────────────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\subsection*{Bảng chức năng từng nút}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|c|c|X|X|}
+\hline
+\textbf{Nút} & \textbf{Ký hiệu trên LCD} & \textbf{Chức năng ở Màn hình đo} & \textbf{Chức năng trong Menu} \\ \hline
+\textbf{ESC} & \texttt{ESC} & \textit{(không dùng)} & Quay lại trang trước / Thoát menu \\ \hline
+\textbf{DOWN ▼} & \texttt{▼} & \textit{(không dùng)} & Di chuyển con trỏ xuống / Giảm giá trị \\ \hline
+\textbf{UP ▲} & \texttt{▲} & \textit{(không dùng)} & Di chuyển con trỏ lên / Tăng giá trị \\ \hline
+\textbf{RIGHT ►} & \texttt{►} & Chuyển đổi giữa hiển thị \textbf{Số} $\leftrightarrow$ \textbf{Biểu đồ} & Chuyển ô nhập liệu (trong cài đặt giờ / mật khẩu) \\ \hline
+\textbf{ENTER ✓} & \texttt{ENT} & Vào hệ thống Menu chính & Xác nhận lựa chọn / Lưu cài đặt \\ \hline
+\end{tabularx}
+\end{table}
+
+\begin{importantbox}
+\textbf{Nhấn giữ nút ENTER trong 7 giây} ở bất kỳ màn hình nào sẽ \textbf{khởi động lại toàn bộ thiết bị}. Xem \hyperref[sec:reboot]{Mục \ref*{sec:reboot} -- Khởi động lại thiết bị}.
+\end{importantbox}
+
+%------------------------------------------------
+
+\section{Màn Hình Khởi Động}
+
+Khi \textbf{bật nguồn}, thiết bị sẽ hiển thị \textbf{logo MebiEco} tràn viền trên toàn bộ màn hình LCD trong \textbf{5 giây}, sau đó tự động chuyển sang màn hình đo lường chính.
+
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│                              │
+│                              │
+│        [LOGO MEBICO]         │
+│        128×64 bitmap         │
+│                              │
+│                              │
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+{\centering ← Hiển thị 5 giây → \par}
+
+\begin{notebox}
+Trong lúc hiển thị logo, hệ thống đang tải cấu hình đã lưu (ngôn ngữ, chế độ hiển thị, hiệu chuẩn, Modbus…) từ bộ nhớ NVS.
+\end{notebox}
+
+%------------------------------------------------
+
+\section{Màn Hình Đo Lường Chính}
+
+Sau khi khởi động xong, thiết bị hiển thị \textbf{màn hình đo lường} với dữ liệu cảm biến thời gian thực. Có \textbf{3 chế độ hiển thị} và \textbf{2 kiểu hiển thị}.
+
+\subsection{Kiểu hiển thị Số (Mặc định)}
+
+\textbf{Chuyển đổi:} Bấm nút \textbf{RIGHT ►} trên màn hình đo lường để chuyển giữa kiểu Số $\leftrightarrow$ Biểu đồ.
+
+\subsubsection*{Chế độ pH (hiển thị pH toàn màn hình)}
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌MebiEco            RS485    ▐│  ← Thanh trên (nền đen, chữ trắng)
+│▌                            ▐│
+│▌          7.02 pH           ▐│  ← Giá trị pH lớn (font chữ đại 3x3)
+│▌                            ▐│
+│▌Dien Cuc pH       25.3°C    ▐│  ← Nhãn + Nhiệt độ (nền đen, chữ trắng)
+│▌22-05-2026      09:30 AM    ▐│  ← Ngày + Giờ
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\subsubsection*{Chế độ DO (hiển thị DO toàn màn hình)}
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌MebiEco            RS485    ▐│
+│▌                            ▐│
+│▌        8.21 mg/L           ▐│  ← Giá trị DO lớn (font chữ đại)
+│▌                            ▐│
+│▌Oxy: 98.2%         25.3°C   ▐│  ← Độ bão hòa + Nhiệt độ
+│▌22-05-2026      09:30 AM    ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\subsubsection*{Chế độ Song Song (DUAL - hiển thị cả pH và DO)}
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌MebiEco            RS485    ▐│
+│▌                            ▐│
+│▌   7.02    │    8.21        ▐│  ← pH (trái) | DO (phải) font vừa (2x2)
+│▌    pH     │   mg/L         ▐│  ← Đơn vị
+│▌                            ▐│
+│▌Oxy: 98.2%         25.3°C   ▐│
+│▌22-05-2026      09:30 AM    ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\subsection{Kiểu hiển thị Biểu Đồ}
+
+Khi bấm nút \textbf{RIGHT ►} ở màn hình đo lường, thiết bị chuyển sang \textbf{chế độ biểu đồ thời gian thực}:
+
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌pH 7.02           25.3°C    ▐│  ← Giá trị hiện tại + Nhiệt độ (nền đen)
+│▌                            ▐│
+│▌ 14 ┬─────────────────●     ▐│  ← Trục Y: giá trị pH/DO
+│▌    │     ╱╲     ╱╲ ╱       ▐│
+│▌  7 ┤────╱──╲───╱──●        ▐│  ← Biểu đồ cuộn trái-phải
+│▌    │   ╱    ╲ ╱            ▐│
+│▌  0 ┴─────────────────────  ▐│  ← Trục X: thời gian (~48 giây)
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\begin{itemize}[label={-}]
+    \item Mỗi điểm dữ liệu cách nhau \textbf{2 giây}.
+    \item Cửa sổ hiển thị \textbf{24 điểm} $\approx$ \textbf{48 giây} dữ liệu liên tục.
+    \item Biểu đồ cuộn tự động từ trái sang phải.
+    \item Bấm \textbf{RIGHT ►} lần nữa để quay lại kiểu Số.
+\end{itemize}
+
+\subsection{Bảng tóm tắt thao tác trên màn hình đo}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|c|X|}
+\hline
+\textbf{Thao tác} & \textbf{Nút bấm} & \textbf{Kết quả} \\ \hline
+Vào menu cài đặt & \textbf{ENTER} & Chuyển sang Menu Chính \\ \hline
+Chuyển Số $\leftrightarrow$ Biểu đồ & \textbf{RIGHT ►} & Đổi kiểu hiển thị (lưu tự động) \\ \hline
+Khởi động lại thiết bị & \textbf{Giữ ENTER 7 giây} & Reset hệ thống \\ \hline
+\end{tabularx}
+\end{table}
+
+%------------------------------------------------
+
+\section{Hệ Thống Menu Cài Đặt}
+
+\subsection{Cách vào Menu}
+Từ \textbf{màn hình đo lường}, bấm nút \textbf{ENTER} $\rightarrow$ Thiết bị chuyển sang \textbf{Menu Chính}.
+
+\subsection{Bố cục màn hình Menu}
+Mỗi trang menu có bố cục cố định:
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Menu Chinh                 ▐│  ← Thanh tiêu đề (y=0-11, nền đen chữ trắng)
+│                              │
+│  1 Cai Dat He Thong          │  ← Danh sách mục (4 mục hiển thị cùng lúc)
+│ ▶2 Cai Dat Hien Thi    ▶     │  ← Mục đang chọn (nền đen chữ trắng, có ►)
+│  3 Cai Dat Modbus            │
+│  4 Cai Dat Cam Bien          │
+│                              │
+│▌ESC  ▼  ▲  ►  ENT           ▐│  ← Thanh trạng thái (nền đen, hiện nút bấm)
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\subsection{Nguyên tắc điều hướng chung}
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|c|X|}
+\hline
+\textbf{Nút} & \textbf{Chức năng} \\ \hline
+\textbf{UP ▲} & Di chuyển lên mục trước \\ \hline
+\textbf{DOWN ▼} & Di chuyển xuống mục tiếp theo \\ \hline
+\textbf{ENTER} & Vào mục con hoặc xác nhận lựa chọn \\ \hline
+\textbf{ESC} & Quay lại trang trước (trang cha) \\ \hline
+\textbf{RIGHT ►} & Chuyển trường nhập liệu (chỉ trong cài đặt giờ / mật khẩu) \\ \hline
+\end{tabularx}
+\end{table}
+
+\begin{tipbox}
+\begin{itemize}[label={-}]
+    \item Mục \textbf{đang được chọn} hiển thị \textbf{nền đen chữ trắng} và có mũi tên \textbf{►} bên phải (nếu có trang con).
+    \item Nếu tên mục dài quá kích thước màn hình, \textbf{chữ sẽ tự động cuộn ngang} để hiện đầy đủ.
+    \item Khi danh sách có \textbf{nhiều hơn 4 mục}, mũi tên \textbf{▲/▼ nhỏ} sẽ xuất hiện ở góc phải để báo hiệu còn mục ẩn phía trên/dưới.
+    \item Mục đang được chọn hiện tại (đã lưu) sẽ có \textbf{dấu sao (*)} bên phải.
+\end{itemize}
+\end{tipbox}
+
+\subsection{Quay về màn hình đo lường}
+Bấm \textbf{ESC} liên tục cho đến khi quay về trang \textbf{Menu Chính}, sau đó bấm \textbf{ESC} thêm 1 lần nữa $\rightarrow$ Quay về \textbf{màn hình đo lường}.
+
+%------------------------------------------------
+
+\section{Cài Đặt Hệ Thống (System Settings)}
+
+\textbf{Đường dẫn:} Menu Chính $\rightarrow$ \textbf{1 Cài Đặt Hệ Thống}
+
+\subsection{Ngôn ngữ (Language)}
+\textbf{Đường dẫn:} Cài Đặt Hệ Thống $\rightarrow$ \textbf{1.1 Ngôn Ngữ}
+
+Chọn ngôn ngữ giao diện cho thiết bị:
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|X|}
+\hline
+\textbf{Lựa chọn} & \textbf{Mô tả} \\ \hline
+\textbf{TIẾNG ANH} (English) & Giao diện hiển thị bằng tiếng Anh \\ \hline
+\textbf{TIẾNG VIỆT} (Vietnamese) & Giao diện hiển thị bằng tiếng Việt \\ \hline
+\end{tabularx}
+\end{table}
+
+\textbf{Thao tác:}
+\begin{enumerate}
+    \item Dùng \textbf{UP/DOWN} chọn ngôn ngữ mong muốn.
+    \item Bấm \textbf{ENTER} để xác nhận.
+    \item Hệ thống hiện thông báo \textbf{"Thành Công!"} trong 1.5 giây và lưu ngay lập tức.
+\end{enumerate}
+
+\subsection{Ngày Tháng (Date)}
+\textbf{Đường dẫn:} Cài Đặt Hệ Thống $\rightarrow$ \textbf{1.2 Ngày Tháng}
+
+\subsubsection*{1.2.1 Định Dạng Ngày (Day Format)}
+Chọn cách hiển thị ngày tháng trên màn hình:
+\begin{table}[H]
+\centering
+\begin{tabularx}{0.7\textwidth}{|l|X|}
+\hline
+\textbf{Lựa chọn} & \textbf{Ví dụ} \\ \hline
+\textbf{YYYY-MM-DD} & 2026-07-15 \\ \hline
+\textbf{DD-MM-YYYY} & 15-07-2026 \\ \hline
+\textbf{MM-DD-YYYY} & 07-15-2026 \\ \hline
+\end{tabularx}
+\end{table}
+\textbf{Thao tác:} Dùng \textbf{UP/DOWN} chọn $\rightarrow$ Bấm \textbf{ENTER} xác nhận.
+
+\subsubsection*{1.2.2 Cài Đặt Giờ (Time Settings)}
+Cho phép chỉnh ngày giờ thủ công khi chưa có kết nối NTP (internet).
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Cai Dat Gio                ▐│
+│                              │
+│         [2026]-07-15         │  ← Ngày (ô đang chọn: nền đen)
+│           09:30:00           │  ← Giờ
+│                              │
+│   ENT:luu RIGHT:doi o        │  ← Hướng dẫn nhanh
+│                              │
+│▌ESC  ▼  ▲  ►  ENT           ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|c|X|}
+\hline
+\textbf{Nút} & \textbf{Chức năng} \\ \hline
+\textbf{RIGHT ►} & Chuyển sang ô tiếp theo (Năm $\rightarrow$ Tháng $\rightarrow$ Ngày $\rightarrow$ Giờ $\rightarrow$ Phút $\rightarrow$ Giây) \\ \hline
+\textbf{UP ▲} & Tăng giá trị ô đang chọn \\ \hline
+\textbf{DOWN ▼} & Giảm giá trị ô đang chọn \\ \hline
+\textbf{ENTER} & \textbf{Lưu giờ} (ghi vào RTC DS3231 và đồng hồ hệ thống) \\ \hline
+\textbf{ESC} & Hủy và quay lại \\ \hline
+\end{tabularx}
+\end{table}
+
+\begin{notebox}
+Sau khi lưu, dòng hướng dẫn sẽ đổi thành \textbf{"Đã lưu!"} để xác nhận. Giờ sẽ được giữ khi mất điện nhờ chip RTC DS3231.
+\end{notebox}
+
+\subsection{Cài Đặt Màn Hình (Screen Settings)}
+\textbf{Đường dẫn:} Cài Đặt Hệ Thống $\rightarrow$ \textbf{1.3 Cài Đặt Màn Hình}
+
+\subsubsection*{1.3.1 Độ Tương Phản (Contrast)}
+Điều chỉnh độ tương phản (sáng/tối) của màn hình LCD.
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Contrast Settings          ▐│
+│                              │
+│   Adjust Contrast            │
+│   ┌──────────────────────┐   │
+│   │████████████░░░░░░░░░░│   │  ← Thanh trượt (slider)
+│   └──────────────────────┘   │
+│       Value: 30              │  ← Giá trị hiện tại
+│                              │
+│▌ESC  ▼  ▲  ►  ENT           ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\begin{itemize}[label={-}]
+    \item \textbf{UP ▲}: Tăng độ tương phản (+1)
+    \item \textbf{DOWN ▼}: Giảm độ tương phản (-1)
+    \item \textbf{ESC}: Quay lại
+    \item \textbf{Phạm vi:} 0 -- 63 (mặc định: 30).
+    \item Giá trị được \textbf{lưu tự động ngay lập tức} khi thay đổi.
+\end{itemize}
+
+\subsubsection*{1.3.2 Tỷ Số Điện Trở (Resistor Ratio)}
+Điều chỉnh tỷ số điện trở nội của driver LCD (ảnh hưởng đến độ sáng tổng thể).
+\begin{itemize}[label={-}]
+    \item \textbf{Phạm vi:} 0 -- 7.
+    \item \textbf{Thao tác:} Tương tự Contrast: \textbf{UP ▲} tăng, \textbf{DOWN ▼} giảm, \textbf{ESC} quay lại.
+\end{itemize}
+
+\begin{warningbox}
+Chỉnh sai tỷ số điện trở có thể làm màn hình quá tối hoặc quá sáng. Nếu màn hình trắng/đen hoàn toàn, hãy điều chỉnh lại giá trị hoặc khởi động lại thiết bị.
+\end{warningbox}
+
+%------------------------------------------------
+
+\section{Cài Đặt Hiển Thị (Display Settings)}
+
+\textbf{Đường dẫn:} Menu Chính $\rightarrow$ \textbf{2 Cài Đặt Hiển Thị}
+
+Chọn chế độ hiển thị chính trên màn hình đo lường:
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|X|X|}
+\hline
+\textbf{Lựa chọn} & \textbf{Mô tả} & \textbf{Khi nào nên dùng} \\ \hline
+\textbf{2.1 Chế Độ pH} & Hiển thị giá trị pH toàn màn hình (font lớn 3x3) & Chỉ giám sát pH \\ \hline
+\textbf{2.2 Chế Độ DO} & Hiển thị giá trị DO toàn màn hình (font lớn 3x3) & Chỉ giám sát DO \\ \hline
+\textbf{2.3 Chế Độ pH \& DO} & Hiển thị song song pH và DO (font vừa 2x2) & Giám sát cả hai \\ \hline
+\end{tabularx}
+\end{table}
+
+\textbf{Thao tác:}
+\begin{enumerate}
+    \item Dùng \textbf{UP/DOWN} chọn chế độ.
+    \item Bấm \textbf{ENTER} xác nhận.
+    \item Chế độ đang hoạt động có dấu \textbf{*} bên phải.
+\end{enumerate}
+
+%------------------------------------------------
+
+\section{Cài Đặt Modbus}
+
+\textbf{Đường dẫn:} Menu Chính $\rightarrow$ \textbf{3 Cài Đặt Modbus}
+
+\begin{importantbox}
+\textbf{Yêu cầu nhập mật khẩu} trước khi truy cập mục này. Mật khẩu mặc định là \textbf{\texttt{1234}}. Xem \hyperref[sec:password]{cách nhập mật khẩu (Mục \ref*{sec:password})}.
+\end{importantbox}
+
+\subsection{Cổng Modbus 1 (MR / External)}
+Cổng giao tiếp RS485 thứ nhất, kết nối với thiết bị bên ngoài (PLC, SCADA...).
+
+\subsection{Cổng Modbus 2 (DO Sensor)}
+Cổng RS485 thứ hai, dùng để kết nối \textbf{cảm biến DO} (KOG206).
+
+\subsection{Các thông số cấu hình (giống nhau cho cả 2 cổng)}
+
+\subsubsection*{3.1.1/3.2.1 Địa Chỉ Modbus (MB Address)}
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Dia Chi Cong 1             ▐│
+│                              │
+│       Gia tri: 1 - 247       │  ← Thông báo phạm vi cho phép
+│                              │
+│            5                 │  ← Giá trị đang chỉnh (font 2x2 lớn)
+│           ─────              │  ← Gạch chân biểu thị đang chọn
+│                              │
+│▌HUY         -/+         LUU ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+\begin{itemize}[label={-}]
+    \item \textbf{UP ▲}: Tăng địa chỉ (+1, quay vòng 247 $\rightarrow$ 1)
+    \item \textbf{DOWN ▼}: Giảm địa chỉ (-1, quay vòng 1 $\rightarrow$ 247)
+    \item \textbf{ENTER}: \textbf{Lưu} địa chỉ
+    \item \textbf{ESC}: \textbf{Hủy} và quay lại
+\end{itemize}
+
+\subsubsection*{3.1.2/3.2.2 Tốc Độ Baud (Baud Rate)}
+Chọn từ danh sách: \textbf{2400} / \textbf{4800} / \textbf{9600} / \textbf{19200} / \textbf{38400} / \textbf{57600} / \textbf{115200}\\
+Tốc độ đang sử dụng có dấu \textbf{*}. Dùng \textbf{UP/DOWN} chọn $\rightarrow$ \textbf{ENTER} xác nhận.
+
+\subsubsection*{3.1.3/3.2.3 Kiểm Tra Chẵn Lẻ (Parity Check)}
+\begin{itemize}[label={-}]
+    \item \textbf{Không} (None): Không kiểm tra
+    \item \textbf{Chẵn} (Even): Kiểm tra bit chẵn
+    \item \textbf{Lẻ} (Odd): Kiểm tra bit lẻ
+\end{itemize}
+
+\subsubsection*{3.1.4/3.2.4 Bit Stop (Stop Bits)}
+\begin{itemize}[label={-}]
+    \item \textbf{1 Bit Stop}: Dùng 1 bit stop (phổ biến nhất)
+    \item \textbf{2 Bit Stop}: Dùng 2 bit stop
+\end{itemize}
+
+\subsection{Lưu ý quan trọng}
+\begin{cautionbox}
+Khi thay đổi cấu hình \textbf{Cổng Modbus 2} (cổng cảm biến DO), cấu hình mới sẽ được \textbf{áp dụng ngay lập tức} vào đường truyền UART. Nếu cài sai thông số so với cảm biến DO thực tế, thiết bị sẽ \textbf{không đọc được dữ liệu DO} và hiển thị \texttt{---} trên màn hình.
+\end{cautionbox}
+
+\subsection{Nhập Mật Khẩu}
+\label{sec:password}
+Khi truy cập \textbf{Cài Đặt Modbus} hoặc \textbf{Cài Đặt Cảm Biến}, thiết bị yêu cầu nhập mật khẩu 4 chữ số:
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Mat Khau Modbus            ▐│
+│                              │
+│       [0]   * * * │  ← 4 ô mật khẩu (ô đang chọn: nền đen)
+│                              │
+│  UP/DN: doi  RIGHT: next     │  ← Hướng dẫn nhanh
+│                              │
+│▌ESC  ▼  ▲  ►  ENT           ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\begin{itemize}[label={-}]
+    \item \textbf{UP ▲}: Tăng số (0$\rightarrow$1$\rightarrow$2$\rightarrow$...$\rightarrow$9$\rightarrow$0)
+    \item \textbf{DOWN ▼}: Giảm số (0$\rightarrow$9$\rightarrow$8$\rightarrow$...$\rightarrow$1$\rightarrow$0)
+    \item \textbf{RIGHT ►}: Chuyển sang ô tiếp theo
+    \item \textbf{ENTER}: Xác nhận mật khẩu
+    \item \textbf{ESC}: Hủy và quay lại Menu Chính
+\end{itemize}
+
+\begin{notebox}
+\begin{itemize}[label={-}]
+    \item Khi nhập đúng: vào thẳng menu mong muốn.
+    \item Khi nhập sai: hiện thông báo \textbf{"Sai mật khẩu!"} (có thể nhập lại).
+    \item Số vừa nhập sẽ hiện trong \textbf{$\sim$0.8 giây} rồi tự ẩn thành \textbf{*} để bảo mật.
+    \item Mật khẩu mặc định: \textbf{\texttt{1234}}. Có thể thay đổi qua Web Portal.
+\end{itemize}
+\end{notebox}
+
+%------------------------------------------------
+
+\section{Cài Đặt Cảm Biến}
+
+\textbf{Đường dẫn:} Menu Chính $\rightarrow$ \textbf{4 Cài Đặt Cảm Biến}
+(\textbf{Yêu cầu nhập mật khẩu}, mặc định: \texttt{1234}).
+
+\subsection{Cấu Hình Cảm Biến pH}
+\textbf{Đường dẫn:} Cài Đặt Cảm Biến $\rightarrow$ \textbf{4.1 Cấu Hình Cảm Biến pH}\\
+Gồm 5 mục con:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|l|X|}
+\hline
+\textbf{Mục} & \textbf{Chức năng} & \textbf{Chi tiết} \\ \hline
+\textbf{4.1.1 Hiệu Chuẩn pH} & Hiệu chuẩn pH 2 điểm hoặc 3 điểm & Xem Mục \ref{sec:calib_ph} \\ \hline
+\textbf{4.1.2 Bộ Lọc Số} & Điều chỉnh mức lọc tín hiệu & Xem bên dưới \\ \hline
+\textbf{4.1.3 Chế Độ Nhiệt Độ} & Chọn ATC/MTC và đơn vị $^\circ$C/$^\circ$F & Xem bên dưới \\ \hline
+\textbf{4.1.4 Cài Đặt Nhiệt Độ} & Nhập nhiệt độ thủ công / offset & Xem bên dưới \\ \hline
+\textbf{4.1.5 Bù Tuyến Tính T} & Hệ số bù tuyến tính alpha (\%/$^\circ$C) & Xem bên dưới \\ \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection*{4.1.2 Bộ Lọc Số (Digital Filter)}
+Điều chỉnh độ nhạy/ổn định của giá trị pH hiển thị:
+\begin{itemize}[label={-}]
+    \item \textbf{Thấp (L)}: Phản hồi nhanh, giá trị dao động nhiều hơn
+    \item \textbf{Vừa (M)}: Cân bằng giữa tốc độ và ổn định
+    \item \textbf{Cao (H)}: Giá trị ổn định nhất, phản hồi chậm hơn
+\end{itemize}
+
+\subsubsection*{4.1.3 Chế Độ Nhiệt Độ (Temp Mode)}
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|c|X|}
+\hline
+\textbf{Lựa chọn} & \textbf{Ý nghĩa} \\ \hline
+\textbf{ATC $^\circ$C} & Bù nhiệt \textbf{tự động} (đo từ cảm biến), đơn vị \textbf{$^\circ$C} \\ \hline
+\textbf{MTC $^\circ$C} & Bù nhiệt \textbf{thủ công} (nhập tay), đơn vị \textbf{$^\circ$C} \\ \hline
+\textbf{ATC $^\circ$F} & Bù nhiệt \textbf{tự động}, đơn vị \textbf{$^\circ$F} \\ \hline
+\textbf{MTC $^\circ$F} & Bù nhiệt \textbf{thủ công}, đơn vị \textbf{$^\circ$F} \\ \hline
+\end{tabularx}
+\end{table}
+
+\textit{Ghi chú: ATC = Automatic Temperature Compensation; MTC = Manual Temperature Compensation.}
+
+\subsubsection*{4.1.4 Cài Đặt Nhiệt Độ (Temp Settings)}
+\textbf{Nếu đang ở chế độ MTC} (thủ công):
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Nhiet Do Thu Cong          ▐│
+│   Unit: °C (MTC)             │
+│                              │
+│          25.0°C              │  ← Giá trị nhập tay (2x2 lớn)
+│          ─────               │
+│   Nhiet do: 25.0°C           │  ← Kết quả cuối cùng
+│                              │
+│▌ESC         -/+         ENT ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\textbf{Nếu đang ở chế độ ATC} (tự động):
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Hieu Chinh Nhiet Do        ▐│
+│   Unit: °C (ATC)             │
+│                              │
+│         +0.0°C               │  ← Giá trị offset (bù lệch, 2x2 lớn)
+│         ─────                │
+│   Nhiet do: 25.0°C           │  ← Nhiệt độ thực tế sau bù
+│                              │
+│▌ESC         -/+         ENT ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\begin{itemize}[label={-}]
+    \item \textbf{MTC:} Phạm vi 0.0 -- 100.0$^\circ$C (32.0 -- 212.0$^\circ$F).
+    \item \textbf{ATC Offset:} Phạm vi -10.0 -- +10.0$^\circ$C (-18.0 -- +18.0$^\circ$F).
+\end{itemize}
+
+\subsubsection*{4.1.5 Bù Tuyến Tính Nhiệt Độ (Temp Linear Compensation)}
+Chức năng này cho phép người dùng cài đặt \textbf{hệ số bù nhiệt tuyến tính $\alpha$} (alpha) dưới dạng phần trăm (\%/$^\circ$C), nhằm \textbf{hiệu chỉnh sai lệch pH do thay đổi nhiệt độ} của dung dịch.
+
+\textbf{Nguyên lý hoạt động:} Đây là một khâu xử lý \textbf{hoàn toàn bằng phần mềm} --- không tác động vật lý lên đầu dò pH. Hệ thống lấy \textbf{25$^\circ$C} làm nhiệt độ tham chiếu và tính toán theo công thức:
+
+\[ C_t = C_{25} \times \{ 1 + \alpha \times (T - 25) \} \]
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|c|X|}
+\hline
+\textbf{Ký hiệu} & \textbf{Ý nghĩa} \\ \hline
+\textbf{$C_t$} & Giá trị pH hiển thị cuối cùng tại nhiệt độ thực tế \\ \hline
+\textbf{$C_{25}$} & Giá trị pH gốc quy đổi về chuẩn 25$^\circ$C \\ \hline
+\textbf{$\alpha$} & Hệ số bù tuyến tính (do người dùng nhập, đơn vị: \%/$^\circ$C) \\ \hline
+\textbf{$T$} & Nhiệt độ thực tế của dung dịch đo từ cảm biến ($^\circ$C) \\ \hline
+\end{tabularx}
+\end{table}
+
+\textbf{Ví dụ:} Nếu $\alpha$ = +2.00\% và nhiệt độ nước = 30$^\circ$C $\rightarrow$ Hệ thống bù thêm 2\% $\times$ (30$-$25) = \textbf{+10\%} vào giá trị pH gốc. Nếu $T$ = 25$^\circ$C thì ($T-$25) = 0, hệ thống \textbf{không bù} gì thêm.
+
+\textbf{Màn hình cài đặt:}
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Bu Tuyen Tinh T            ▐│
+│   He so alpha (%/°C)         │
+│                              │
+│        +0.00 %               │  ← Giá trị hệ số alpha (2x2 lớn)
+│        ─────                 │
+│   pH (25°C): 7.02 pH         │  ← pH quy đổi về 25°C (xem trước kết quả)
+│                              │
+│▌HUY         -/+         LUU ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\begin{itemize}[label={-}]
+    \item \textbf{UP ▲}: Tăng +0.001 (tương đương +0.10\%)
+    \item \textbf{DOWN ▼}: Giảm -0.001
+    \item \textbf{Phạm vi:} -10.00\% đến +10.00\%.
+    \item Dòng \textbf{pH (25$^\circ$C)} hiển thị \textbf{kết quả tính toán thời gian thực} để bạn đánh giá trước khi lưu.
+\end{itemize}
+
+\begin{tipbox}
+\textbf{Khi nào cần dùng?} Chức năng này hữu ích khi bạn đo dung dịch có đặc tính trôi dạt pH theo nhiệt độ một cách đồng đều. Hãy nhập hệ số $\alpha$ phù hợp. Hệ thống đã \textbf{tích hợp sẵn thuật toán bù nhiệt chính (Phương trình Nernst)}, nên chức năng này chỉ là tùy chọn. Hầu hết trường hợp, bạn có thể \textbf{để $\alpha$ = 0.00\%} (mặc định).
+\end{tipbox}
+
+\subsection{Cấu Hình Cảm Biến DO}
+\textbf{Đường dẫn:} Cài Đặt Cảm Biến $\rightarrow$ \textbf{4.2 Cấu Hình Cảm Biến DO}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|l|X|}
+\hline
+\textbf{Mục} & \textbf{Chức năng} & \textbf{Chi tiết} \\ \hline
+\textbf{4.2.1 Hiệu Chuẩn DO} & Hiệu chuẩn điểm 0, độ dốc, nhiệt độ & Xem Mục \ref{sec:calib_do} \\ \hline
+\textbf{4.2.2 Reset Hiệu Chuẩn DO} & Khôi phục cài đặt gốc cảm biến DO & Xóa toàn bộ hiệu chuẩn \\ \hline
+\end{tabularx}
+\end{table}
+
+\begin{warningbox}
+\textbf{Reset Hiệu Chuẩn DO} sẽ gửi lệnh khôi phục cài đặt gốc đến cảm biến DO. Thao tác này \textbf{không thể hoàn tác} và yêu cầu hiệu chuẩn lại sau đó.
+\end{warningbox}
+
+%------------------------------------------------
+
+\section{Hiệu Chuẩn pH}
+\label{sec:calib_ph}
+
+\textbf{Đường dẫn:} Cài Đặt Cảm Biến $\rightarrow$ Cấu Hình Cảm Biến pH $\rightarrow$ \textbf{4.1.1 Hiệu Chuẩn pH}
+
+\subsection{Chọn phương pháp hiệu chuẩn}
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|l|X|}
+\hline
+\textbf{Phương pháp} & \textbf{Mô tả} & \textbf{Dung dịch cần chuẩn bị} \\ \hline
+\textbf{Hiệu Chuẩn 2 Điểm} & Đơn giản, dùng hàng ngày & pH 4.00 + pH 7.00 \\ \hline
+\textbf{Hiệu Chuẩn 3 Điểm} & Khi cần độ chính xác cao & 3 dung dịch (xem bên dưới) \\ \hline
+\textbf{Reset Hiệu Chuẩn pH} & Xóa dữ liệu hiệu chuẩn & \textit{(không cần)} \\ \hline
+\end{tabularx}
+\end{table}
+
+\subsection{Hiệu chuẩn 2 điểm (Cal. 2 Point)}
+Sử dụng \textbf{2 mốc dung dịch đệm}: pH \textbf{4.00} và pH \textbf{7.00}.
+
+\textbf{Bước 1:} Chọn mốc hiệu chuẩn
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Hieu Chuan 2D              ▐│
+│                              │
+│  1. Thap 4.00/195.6          │  ← Mốc pH 4.00 / Giá trị mV đã lưu trước đó
+│  2. Cao  7.00/24.2           │  ← Mốc pH 7.00 / Giá trị mV đã lưu trước đó
+│                              │
+│▌ESC  ▼  ▲  ►  ENT           ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\textbf{Bước 2:} Nhúng đầu dò vào dung dịch đệm, chọn mốc tương ứng, bấm \textbf{ENTER}.
+
+\textbf{Bước 3:} Màn hình thực thi hiệu chuẩn
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Hieu Chuan 4.00 pH         ▐│
+│                              │
+│        4.00 pH               │  ← Mốc mục tiêu (font 2x2 lớn)
+│                              │
+│  25.0°C   OK      182.4 mV   │  ← Nhiệt độ | Trạng thái | Điện áp đo
+│                              │
+│▌HUY                     LUU ▐│  ← LƯU chỉ hiện khi trạng thái = OK
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+
+\begin{itemize}[label={-}]
+    \item \textbf{OK}: Điện áp nằm trong dải cho phép $\rightarrow$ \textbf{Có thể lưu}
+    \item \textbf{ERR}: Điện áp ngoài dải $\rightarrow$ Nút LƯU bị ẩn $\rightarrow$ \textbf{Không thể lưu}
+\end{itemize}
+
+\textbf{Bước 4:} Khi trạng thái hiện \textbf{OK}, bấm \textbf{ENTER} để \textbf{lưu hiệu chuẩn}.
+\textbf{Bước 5:} Lặp lại cho mốc còn lại.
+
+\subsection{Hiệu chuẩn 3 điểm (Cal. 3 Point)}
+\begin{itemize}[label={-}]
+    \item \textbf{Nhóm 1} (4/6/9): pH 4.00 + pH 6.86 + pH 9.18 (Chuẩn NIST)
+    \item \textbf{Nhóm 2} (4/7/10): pH 4.00 + pH 7.00 + pH 10.00 (Chuẩn Âu/Mỹ)
+\end{itemize}
+
+\subsection{Bảng ngưỡng điện áp hợp lệ}
+\begin{table}[H]
+\centering
+\begin{tabularx}{0.8\textwidth}{|c|c|X|}
+\hline
+\textbf{Mốc pH} & \textbf{Điện áp tiêu chuẩn} & \textbf{Dải OK (cho phép)} \\ \hline
+\textbf{4.00} & $\sim$177 mV & 157 -- 197 mV \\ \hline
+\textbf{6.86} & $\sim$8 mV & -12 -- 28 mV \\ \hline
+\textbf{7.00} & $\sim$0 mV & -20 -- 20 mV \\ \hline
+\textbf{9.18} & $\sim$-129 mV & -148 -- -108 mV \\ \hline
+\textbf{10.00} & $\sim$-177 mV & -197 -- -157 mV \\ \hline
+\end{tabularx}
+\end{table}
+
+%------------------------------------------------
+
+\section{Hiệu Chuẩn DO}
+\label{sec:calib_do}
+
+\textbf{Đường dẫn:} Cài Đặt Cảm Biến $\rightarrow$ Cấu Hình Cảm Biến DO $\rightarrow$ \textbf{4.2.1 Hiệu Chuẩn DO}
+
+\subsection{Hiệu Chuẩn Điểm 0 (Zero Calibration)}
+Hiệu chuẩn cảm biến DO ở nồng độ oxy = 0\% (nước không có oxy).
+\begin{lcdbox}
+\begin{verbatim}
+┌──────────────────────────────┐
+│▌ Hieu Chuan DO Diem 0       ▐│
+│                              │
+│       0.12 mg/L              │  ← Nồng độ DO hiện tại (font 2x2 lớn)
+│                              │
+│   T:25.0°C  Sat:1.2%         │  ← Nhiệt độ + Độ bão hòa
+│                              │
+│▌HUY                     LUU ▐│
+└──────────────────────────────┘
+\end{verbatim}
+\end{lcdbox}
+\textbf{Quy trình:} Nhúng đầu dò vào \textbf{dung dịch Na$_2$SO$_3$} (natri sulfit). Đợi giá trị ổn định, bấm \textbf{ENTER} để lưu.
+
+\subsection{Hiệu Chuẩn Độ Dốc (Slope Calibration)}
+Hiệu chuẩn cảm biến DO ở nồng độ oxy = 100\% (không khí bão hòa). để đầu dò tiếp xúc với \textbf{không khí} hoặc \textbf{nước bão hòa không khí}. Đợi ổn định, bấm \textbf{ENTER}.
+
+\subsection{Hiệu Chỉnh Nhiệt Độ DO (DO Temp Cal)}
+Nhập giá trị nhiệt độ chuẩn từ nhiệt kế tham chiếu (phạm vi 0.0 -- 99.9$^\circ$C).
+
+%------------------------------------------------
+
+\section{Web Portal}
+
+\subsection{Kết nối WiFi}
+Thiết bị tạo \textbf{điểm phát WiFi (Access Point)} ngay khi khởi động:
+\begin{itemize}[label={-}]
+    \item \textbf{Tên WiFi (SSID):} \texttt{MEBICO\_ESP32\_PH\_xxxx} (xxxx là mã riêng của thiết bị)
+    \item \textbf{Mật khẩu WiFi:} \texttt{Mebico@69696969}
+    \item \textbf{Truy cập Web Portal:} \url{http://192.168.4.1}
+\end{itemize}
+
+\subsection{Chức năng Web Portal}
+\begin{itemize}[label={-}]
+    \item \textbf{Wi-Fi Manager:} Quét mạng WiFi xung quanh để kết nối internet.
+    \item \textbf{Dữ liệu thời gian thực:} Xem giá trị trực tiếp.
+    \item \textbf{Màn hình từ xa:} Hiển thị ảnh LCD ảo + 5 nút bấm ảo điều khiển.
+    \item \textbf{Cài đặt \& Cấu hình:} Thay đổi hiệu chuẩn, Modbus, Azure IoT Hub.
+\end{itemize}
+
+%------------------------------------------------
+
+\section{Khởi Động Lại Thiết Bị}
+\label{sec:reboot}
+
+Thiết bị hỗ trợ \textbf{khởi động lại bằng phần mềm} (software reboot).
+\textbf{Cách thực hiện:} Nhấn \textbf{giữ nút ENTER liên tục trong 7 giây} ở \textbf{bất kỳ màn hình nào}.
+
+\begin{verbatim}
+Nhấn giữ ENTER ────→ Đợi 7 giây ────→ Màn hình hiện thông báo:
+                                         ┌──────────────────────────┐
+                                         │                          │
+                                         │   DANG KHOI DONG         │
+                                         │   LAI HE THONG...        │
+                                         │                          │
+                                         └──────────────────────────┘
+                                         ────→ Đợi 1 giây ────→ Thiết bị reset
+\end{verbatim}
+
+\begin{warningbox}
+Khởi động lại \textbf{không làm mất} dữ liệu cài đặt vì tất cả đã được lưu vào bộ nhớ NVS Flash. Tuy nhiên, biểu đồ thời gian thực sẽ bị xóa.
+\end{warningbox}
+
+%------------------------------------------------
+
+\section{Sơ Đồ Cây Menu Đầy Đủ}
+
+\begin{notebox}
+Dưới đây là sơ đồ Mermaid gốc trong tài liệu Markdown. Để hiển thị dưới dạng hình ảnh đồ họa trong LaTeX, bạn có thể copy đoạn text này dán vào \href{https://mermaid.live/}{Mermaid Live Editor} rồi xuất file hình ảnh (.png) để chèn vào.
+\end{notebox}
+
+\begin{verbatim}
+graph TD
+    MEASURE["[MÀN HÌNH ĐO LƯỜNG]<br/><i>ENTER: vào menu</i><br/><i>RIGHT: Số ↔ Biểu đồ</i>"]
+    
+    MEASURE -->|ENTER| MAIN["[MENU CHÍNH]"]
+    
+    MAIN --> SYS["1. Cài Đặt Hệ Thống"]
+    MAIN --> DISP["2. Cài Đặt Hiển Thị"]
+    MAIN -->|[Mật khẩu]| MBUS["3. Cài Đặt Modbus"]
+    MAIN -->|[Mật khẩu]| SENSOR["4. Cài Đặt Cảm Biến"]
+    
+    SYS --> LANG["1.1 Ngôn Ngữ<br/>Tiếng Anh / Tiếng Việt"]
+    SYS --> DATE["1.2 Ngày Tháng"]
+    SYS --> SCREEN["1.3 Cài Đặt Màn Hình"]
+    ... [v.v...]
+\end{verbatim}
+
+%------------------------------------------------
+
+\section{Bảng Tra Cứu Nhanh Nút Bấm}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|X|l|X|}
+\hline
+\multicolumn{2}{|c|}{\textbf{Màn hình đo lường}} & \multicolumn{2}{c|}{\textbf{Menu danh sách}} \\ \hline
+\textbf{ENTER} & Vào Menu Chính & \textbf{UP ▲} & Lên mục trước \\ \hline
+\textbf{RIGHT ►} & Chuyển Số $\leftrightarrow$ Biểu đồ & \textbf{DOWN ▼} & Xuống mục tiếp \\ \hline
+\textbf{Giữ ENTER 7s} & Khởi động lại & \textbf{ENTER / ESC} & Vào / Quay lại \\ \hline
+\end{tabularx}
+\end{table}
+
+\begin{tipbox}
+\textbf{Lưu ý chung:}
+\begin{itemize}[label={-}]
+    \item Mọi cài đặt được \textbf{lưu tự động} vào bộ nhớ Flash (NVS) và không bị mất khi mất điện.
+    \item Nếu thiết bị có kết nối internet qua WiFi, thời gian sẽ được \textbf{tự động đồng bộ} qua NTP server.
+    \item Thiết bị hỗ trợ \textbf{cập nhật firmware từ xa} (OTA) qua Azure IoT Hub.
+\end{itemize}
+\end{tipbox}
+
+\end{document}

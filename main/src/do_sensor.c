@@ -5,6 +5,7 @@
 #include "user_storage.h"
 
 #include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -523,6 +524,29 @@ static void do_sensor_task(void *arg) {
            s_cfg.rs485_mode == DO_SENSOR_RS485_MANUAL_DE ? "manual"
                                                          : "uart_rts");
 
+    // =========================================================================
+    // CODE MÔ PHỎNG SENSOR DO MODBUS (HIỂN THỊ NGẪU NHIÊN 5 GIÁ TRỊ)
+    // Để chuyển sang chạy thực tế: Đổi '#if 1' bên dưới thành '#if 0'
+    // =========================================================================
+#if 0
+  ESP_LOGI(TAG, "DO Sensor Dang chay o che do MO PHONG (Modbus Status = TRUE)");
+  static const float s_sim_do_values[5] = {12.34f, 5.67f, 8.90f, 0.12f, 3.45f};
+
+  while (true) {
+    do_sensor_reading_t reading = {
+        .do_mg_l = s_sim_do_values[rand() % 5],        // Hiển thị ngẫu nhiên 5 giá trị ở thứ tự khác pH
+        .temp_c = s_sim_do_values[rand() % 5],         // Nhiệt độ DO hiển thị ngẫu nhiên 5 giá trị tương tự
+        .saturation_pct = 85.0f,
+        .valid = true,                                 // Giả lập trạng thái kết nối Modbus là True
+        .error_code = 0,
+        .timestamp_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS),
+    };
+
+    publish_reading(&reading);
+    vTaskDelay(pdMS_TO_TICKS(s_cfg.poll_interval_ms));
+  }
+#else
+  // CHẠY THỰC TẾ TRÊN PHẦN CỨNG MODBUS RS485:
   do_sensor_probe();
   do_sensor_kog206_boot();
 
@@ -562,6 +586,7 @@ static void do_sensor_task(void *arg) {
     publish_reading(&reading);
     vTaskDelay(pdMS_TO_TICKS(s_cfg.poll_interval_ms));
   }
+#endif
 }
 
 const char *do_sensor_error_str(int error_code) {
@@ -689,7 +714,10 @@ esp_err_t do_sensor_init(const do_sensor_config_t *config) {
       s_cfg.stop_bits = UART_STOP_BITS_1;
   }
 
-  ESP_RETURN_ON_ERROR(uart_rs485_init(), TAG, "rs485 init failed");
+  esp_err_t uart_err = uart_rs485_init();
+  if (uart_err != ESP_OK) {
+      ESP_LOGW(TAG, "Lỗi khởi tạo UART RS485 (%s), vẫn tiếp tục cho task mô phỏng", esp_err_to_name(uart_err));
+  }
 
   s_initialized = true;
   ESP_LOGI(TAG, "init OK: TX=%d RX=%d DE=%d baud=%lu parity=%d stop=%d", s_cfg.pin_tx, s_cfg.pin_rx,

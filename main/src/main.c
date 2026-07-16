@@ -16,7 +16,9 @@
 #include "user_system.h"
 #include "user_time.h"
 #include "wifi_config_manager.h"
+#include <stdlib.h>
 #include <sys/time.h>
+#include <time.h>
 
 static const char *TAG = "PH_TEMP_SYSTEM";
 
@@ -47,36 +49,65 @@ static void on_do_reading(const do_sensor_reading_t *reading, void *user_ctx) {
 
 static void ph_temp_sensor_task(void *pvParameters) {
   ESP_LOGI(TAG, "ph_temp_sensor_task bat dau chay trên Core 1");
+
+  // Đọc mẫu ban đầu để nạp sẵn giá trị cho bộ lọc trung vị (tránh lệch/trễ lúc khởi động)
+  int32_t init_temp = read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN);
+  int32_t init_ph = read_cs1237_raw(PH_SCLK_PIN, PH_DATA_PIN);
+
+  init_median_filter(&temp_median_filter, init_temp);
+  init_median_filter(&ph_median_filter, init_ph);
+
   while (1) {
     // 1. KÊNH NHIỆT ĐỘ
-    // int32_t temp_raw = read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN);
-    // int32_t temp_filtered = apply_moving_average(&temp_filter, temp_raw);
-    // float current_temp =
-    //     calculate_temperature(temp_filtered, true); // true = PT1000
-
-     int32_t temp_raw = 0;
+    int32_t temp_raw = 0;
+    int32_t temp_med = 0;
     int32_t temp_filtered = 0;
     float current_temp = 25.0f;
     if (g_temp_mode == TEMP_MODE_MTC_C || g_temp_mode == TEMP_MODE_MTC_F) {
         current_temp = g_manual_temp;
     } else {
         temp_raw = read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN);
-        temp_filtered = apply_moving_average(&temp_filter, temp_raw);
+        temp_med = apply_median_filter(&temp_median_filter, temp_raw);
+        temp_filtered = apply_moving_average(&temp_filter, temp_med);
         current_temp = calculate_temperature(temp_filtered, true) + g_temp_offset; // true = PT1000
+        if (current_temp < -40.0f || current_temp > 150.0f) {
+            current_temp = 25.0f; // Khôi phục 25C nếu đầu dò bị ngắt hoặc đo bất thường
+        }
     }
 
     // 2. KÊNH pH
     int32_t ph_raw = read_cs1237_raw(PH_SCLK_PIN, PH_DATA_PIN);
-    int32_t ph_filtered = apply_moving_average(&ph_filter, ph_raw);
+    int32_t ph_med = apply_median_filter(&ph_median_filter, ph_raw);
+    int32_t ph_filtered = apply_moving_average(&ph_filter, ph_med);
 
-    // Tính v_diff cho cả raw và filtered (đổi ra mV)
+    // Tính v_diff cho cả raw, med và filtered (đổi ra mV)
     float v_diff_raw_mv = (((float)ph_raw * V_REF_ADC) / ADC_DIVISOR) * 1000.0f;
+    float v_diff_med_mv = (((float)ph_med * V_REF_ADC) / ADC_DIVISOR) * 1000.0f;
     float v_diff_filt_mv =
         (((float)ph_filtered * V_REF_ADC) / ADC_DIVISOR) * 1000.0f;
 
     float v_probe_mv = 0;
     float current_ph = calculate_ph_with_atc_calibrated(
         &ph_cal, ph_filtered, current_temp, &v_probe_mv);
+
+    // =========================================================================
+    // CODE MÔ PHỎNG SENSOR (TỰ ĐỘNG THAY ĐỔI 5 GIÁ TRỊ)
+    // Để chuyển sang chạy thực tế: Đổi '#if 1' bên dưới thành '#if 0' hoặc comment lại toàn bộ khối này
+    // =========================================================================
+#if 0
+    static const float s_sim_values[5] = {12.34f, 5.67f, 8.90f, 0.12f, 3.45f};
+    static size_t s_sim_ph_idx = 0;
+    static size_t s_sim_temp_idx = 0;
+
+    // Mô phỏng pH hiển thị lần lượt 5 giá trị
+    current_ph = s_sim_values[s_sim_ph_idx];
+    s_sim_ph_idx = (s_sim_ph_idx + 1) % 5;
+
+    // Mô phỏng Nhiệt độ hiển thị lần lượt 5 giá trị tương tự
+    current_temp = s_sim_values[s_sim_temp_idx];
+    s_sim_temp_idx = (s_sim_temp_idx + 1) % 5;
+#endif
+    // =========================================================================
 
     // 3. IN KẾT QUẢ
     static uint32_t last_ph_log_time = 0;
@@ -87,9 +118,9 @@ static void ph_temp_sensor_task(void *pvParameters) {
       first_ph_log = false;
       ESP_LOGI(TAG,
                "Nhiệt độ: %.2f C | ADC Temp: %" PRId32 " | ADC pH Raw: %" PRId32
-               " (v_diff: %.2f mV) | Filt: %" PRId32 " (v_diff: %.2f mV)"
+               " (v_diff: %.2f mV) | Med: %" PRId32 " (v_diff: %.2f mV) | Filt: %" PRId32 " (v_diff: %.2f mV)"
                " | V_Probe: %.2f mV | pH (ATC): %.2f",
-               current_temp, temp_filtered, ph_raw, v_diff_raw_mv, ph_filtered,
+               current_temp, temp_filtered, ph_raw, v_diff_raw_mv, ph_med, v_diff_med_mv, ph_filtered,
                v_diff_filt_mv, v_probe_mv, current_ph);
     }
 
@@ -149,6 +180,11 @@ static void system_startup_task(void *pvParameters) {
 
 void app_main(void) {
   init_system_gpios();
+
+  /* Fix mui gio ngay tu dau (UTC+7 = "UTC-7" theo POSIX), khong phu thuoc RTC.
+   * Neu khong, khi RTC loi/dung thi TZ chua duoc set -> dong ho hien sai UTC. */
+  setenv("TZ", "UTC-7", 1);
+  tzset();
 
   init_moving_average(&temp_filter);
   init_moving_average(&ph_filter);
@@ -228,7 +264,7 @@ void app_main(void) {
   do_cfg.stop_bits = (g_mb2_stop == 2) ? UART_STOP_BITS_2 : UART_STOP_BITS_1;
   do_cfg.rs485_mode = DO_SENSOR_RS485_MANUAL_DE;
   do_cfg.poll_interval_ms = 500;
-  do_cfg.debug = true;
+  do_cfg.debug = false;
 
   ESP_LOGI(TAG, "Doc DO moi %lu giay/lan",
            (unsigned long)do_cfg.poll_interval_ms / 1000);

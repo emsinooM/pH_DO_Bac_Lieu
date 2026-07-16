@@ -26,8 +26,10 @@ esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
 static httpd_handle_t start_webserver(void)
 {
     esp_err_t err = mdns_init();
-    if (err) {
-        ESP_LOGW("DNS: ", "mDNS init failed: %d (continue without mDNS)", err);
+    if (err == ESP_ERR_INVALID_STATE) {
+        // mDNS already initialized in wifi_config_manager, ignore
+    } else if (err != ESP_OK) {
+        ESP_LOGW("DNS", "mDNS init failed: %d (continue without mDNS)", err);
     } else {
         mdns_hostname_set("esp32server");
     }

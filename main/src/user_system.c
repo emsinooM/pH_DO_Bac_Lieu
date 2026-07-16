@@ -1,5 +1,4 @@
 #include "user_system.h"
-#include "tcp_server_com.h"
 #include "user_storage.h"
 #include "esp_log.h"
 #include "user_azure.h"
@@ -39,40 +38,10 @@ void User_System_Clear_Reset_Count(void)
 
 void User_System_Get_Config(void)
 {
-    memset(TCP_Handle.remoteIP, 0, sizeof(TCP_Handle.remoteIP));
-    memset(TCP_Handle.ssid, 0, sizeof(TCP_Handle.ssid));
-    memset(TCP_Handle.pass, 0, sizeof(TCP_Handle.pass));
-
     memset(&IoTHubHandle, 0, sizeof(IoTHubHandle));
 
     ESP_LOGI("SYS INIT", "Get Tcp parameters");
-    // if(Nvs_Read_String(STORAGE_KEY_SEVER_IP, TCP_Handle.remoteIP) == true)
-    // {
-    //     ESP_LOGI("SYS INIT", "SERVER_IP: %s", TCP_Handle.remoteIP);
-    // }else{
-    //     ESP_LOGE("SYS INIT", "Read SERVER_IP fail, set default: %s", SYS_SERVER_IP_DEFAULT);
-    // }
-
-    // if(Nvs_Read_Number(STORAGE_KEY_SEVER_PORT, &TCP_Handle.remotePort) == true)
-    // {
-    //     ESP_LOGI("SYS INIT", "SERVER_PORT: %d", TCP_Handle.remotePort);
-    // }else{
-    //     ESP_LOGE("SYS INIT", "Read SERVER_PORT fail, set default: %d", SYS_SERVER_PORT_DEFAULT);
-    // }
     
-    // if(Nvs_Read_String(STORAGE_KEY_WIFI_SSID, TCP_Handle.ssid) == true)
-    // {
-    //     ESP_LOGI("SYS INIT", "WIFI_SSID: %s", TCP_Handle.ssid);
-    // }else{
-    //     ESP_LOGE("SYS INIT", "Read WIFI_SSID fail, set default: %s", SYS_WIFI_SSID_DEFAULT);
-    // }
-
-    // if(Nvs_Read_String(STORAGE_KEY_WIFI_PASS, TCP_Handle.pass) == true)
-    // {
-    //     ESP_LOGI("SYS INIT", "WIFI_PASS: %s", TCP_Handle.pass);
-    // }else{
-    //     ESP_LOGE("SYS INIT", "Read WIFI_PASS fail, set default: %s", SYS_WIFI_PASS_DEFAULT);
-    // }
 
     
     // if(Nvs_Read_String(STORAGE_KEY_IOT_HUB_HOST_NAME, IoTHubHandle.hostName) == true)
@@ -98,20 +67,7 @@ void User_System_Get_Config(void)
     //     ESP_LOGE("SYS INIT", "Read IOT_HUB_SYMM_KEY fail, set default: %s", SYS_IOT_HUB_SYMMETRIC_KEY_DEFAULT);
     // }
 
-    // memcpy(TCP_Handle.ssid, "HARDWARE", strlen("HARDWARE"));
-    // memcpy(TCP_Handle.pass, "H@rdWar3.86", strlen("H@rdWar3.86"));
-
-    // memcpy(TCP_Handle.ssid, "PETROCLOUD DEVICE", strlen("PETROCLOUD DEVICE"));
-    // memcpy(TCP_Handle.pass, "PetroCl0ud.789", strlen("PetroCl0ud.789"));
-
-    // memcpy(TCP_Handle.ssid, "Le Bien", strlen("Le Bien"));
-    // memcpy(TCP_Handle.pass, "dang16072005", strlen("dang16072005"));
-
     // Keep STA credentials empty at boot; wifi_config_manager will load from FRAM when available.
-    // memcpy(TCP_Handle.ssid, "Mebieco", strlen("Mebieco"));
-    // memcpy(TCP_Handle.pass, "68686868@", strlen("68686868@"));
-    // memcpy(TCP_Handle.ssid, "Le Khanh Dang", strlen("Le Khanh Dang"));
-    // memcpy(TCP_Handle.pass, "0337726035", strlen("0337726035"));
 
     // memcpy(IoTHubHandle.hostName, "dev-iot-hub-1.azure-devices.net", strlen("dev-iot-hub-1.azure-devices.net"));
     // memcpy(IoTHubHandle.deviceId, "test-devices-1", strlen("test-devices-1"));
