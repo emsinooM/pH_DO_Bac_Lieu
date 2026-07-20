@@ -1111,24 +1111,34 @@ static void lcd_demo_task(void *arg) {
     if (tick == 0) {
       PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
       ph_val = status.ph;
+      bool ph_valid = status.ph_valid;
       do_val = status.do_mg_l;
       do_valid = status.do_valid;
 
+      bool temp_valid = false;
       // Chế độ pH dùng nhiệt độ pH. Chế độ DO và song song dùng nhiệt độ DO
       // (nếu lỗi dùng pH làm fallback).
       if (g_display_mode == DISP_MODE_PH) {
         temp_val = status.temperature;
+        temp_valid = status.temp_valid;
       } else {
         temp_val = status.do_valid ? status.do_temp_c : status.temperature;
+        temp_valid = status.do_valid ? (status.do_temp_c >= 0.0f && status.do_temp_c <= 60.0f) : status.temp_valid;
       }
 
       /* Format chuỗi */
-      snprintf(ph_str, sizeof(ph_str), "%.2f", ph_val);
+      if (ph_valid) {
+        snprintf(ph_str, sizeof(ph_str), "%.2f", ph_val);
+      } else {
+        snprintf(ph_str, sizeof(ph_str), "N/A");
+      }
+
       if (do_valid) {
         snprintf(do_str, sizeof(do_str), "%.2f", do_val);
       } else {
-        snprintf(do_str, sizeof(do_str), "---");
+        snprintf(do_str, sizeof(do_str), "N/A");
       }
+
       if (g_sys_lang == LANG_VI) {
         if (do_valid) {
           snprintf(do_sat_str, sizeof(do_sat_str), "Oxy: %.1f%%", status.do_saturation_pct);
@@ -1142,9 +1152,10 @@ static void lcd_demo_task(void *arg) {
           snprintf(do_sat_str, sizeof(do_sat_str), "Sat: N/A");
         }
       }
+
       bool is_f = (g_temp_mode == TEMP_MODE_ATC_F || g_temp_mode == TEMP_MODE_MTC_F);
-      if (temp_val < -20.0f || temp_val > 150.0f) {
-        snprintf(temp_val_num_str, sizeof(temp_val_num_str), "25.0");
+      if (!temp_valid) {
+        snprintf(temp_val_num_str, sizeof(temp_val_num_str), "N/A");
       } else if (is_f) {
         float temp_val_f = temp_val * 1.8f + 32.0f;
         snprintf(temp_val_num_str, sizeof(temp_val_num_str), "%.1f", temp_val_f);
@@ -1287,39 +1298,49 @@ static void lcd_demo_task(void *arg) {
         { // DISP_MODE_DO hoặc DISP_MODE_DUAL
           LCD_DrawString(4, 47, do_sat_str, LCD_COLOR_OFF);
         }
-        /* Hiển thị số nhiệt độ căn chuẩn khớp với chuỗi giờ bên dưới (chữ số lẻ sau . ở x = 100) */
-        char int_part[10] = {0};
-        char frac_char[2] = {0, 0};
-        char *dot_ptr = strchr(temp_val_num_str, '.');
-        if (dot_ptr) {
-          int len_int = dot_ptr - temp_val_num_str;
-          strncpy(int_part, temp_val_num_str, len_int);
-          int_part[len_int] = '\0';
-          frac_char[0] = dot_ptr[1];
+        /* Hiển thị số nhiệt độ căn chuẩn khớp với chuỗi giờ bên dưới */
+        if (strcmp(temp_val_num_str, "N/A") == 0) {
+          LCD_DrawString(86, 47, "N/A", LCD_COLOR_OFF);
+          LCD_DrawPixel(106, 47, LCD_COLOR_OFF);
+          LCD_DrawPixel(107, 47, LCD_COLOR_OFF);
+          LCD_DrawPixel(106, 48, LCD_COLOR_OFF);
+          LCD_DrawPixel(107, 48, LCD_COLOR_OFF);
+          char unit_str_buf[2] = { unit_char, '\0' };
+          LCD_DrawString(111, 47, unit_str_buf, LCD_COLOR_OFF);
         } else {
-          strcpy(int_part, temp_val_num_str);
-          frac_char[0] = '0';
+          char int_part[10] = {0};
+          char frac_char[2] = {0, 0};
+          char *dot_ptr = strchr(temp_val_num_str, '.');
+          if (dot_ptr) {
+            int len_int = dot_ptr - temp_val_num_str;
+            strncpy(int_part, temp_val_num_str, len_int);
+            int_part[len_int] = '\0';
+            frac_char[0] = dot_ptr[1];
+          } else {
+            strcpy(int_part, temp_val_num_str);
+            frac_char[0] = '0';
+          }
+
+          uint8_t int_w = (uint8_t)(strlen(int_part) * 6);
+          uint8_t int_x = 94 - int_w;
+
+          /* Phần nguyên (giãn về bên trái) */
+          LCD_DrawString(int_x, 47, int_part, LCD_COLOR_OFF);
+          /* Dấu chấm (.) */
+          LCD_DrawString(94, 47, ".", LCD_COLOR_OFF);
+          /* Số thập phân sau dấu chấm (khớp thẳng đứng với số phút thứ 2 tại x = 100) */
+          LCD_DrawString(100, 47, frac_char, LCD_COLOR_OFF);
+
+          /* Ký hiệu độ (2x2 px) tại x = 106 */
+          LCD_DrawPixel(106, 47, LCD_COLOR_OFF);
+          LCD_DrawPixel(107, 47, LCD_COLOR_OFF);
+          LCD_DrawPixel(106, 48, LCD_COLOR_OFF);
+          LCD_DrawPixel(107, 48, LCD_COLOR_OFF);
+
+          /* Chữ đơn vị C/F tại x = 111 */
+          char unit_str_buf[2] = { unit_char, '\0' };
+          LCD_DrawString(111, 47, unit_str_buf, LCD_COLOR_OFF);
         }
-
-        uint8_t int_w = (uint8_t)(strlen(int_part) * 6);
-        uint8_t int_x = 94 - int_w;
-
-        /* Phần nguyên (giãn về bên trái) */
-        LCD_DrawString(int_x, 47, int_part, LCD_COLOR_OFF);
-        /* Dấu chấm (.) */
-        LCD_DrawString(94, 47, ".", LCD_COLOR_OFF);
-        /* Số thập phân sau dấu chấm (khớp thẳng đứng với số phút thứ 2 tại x = 100) */
-        LCD_DrawString(100, 47, frac_char, LCD_COLOR_OFF);
-
-        /* Ký hiệu độ (2x2 px) tại x = 106 */
-        LCD_DrawPixel(106, 47, LCD_COLOR_OFF);
-        LCD_DrawPixel(107, 47, LCD_COLOR_OFF);
-        LCD_DrawPixel(106, 48, LCD_COLOR_OFF);
-        LCD_DrawPixel(107, 48, LCD_COLOR_OFF);
-
-        /* Chữ đơn vị C/F tại x = 111 */
-        char unit_str_buf[2] = { unit_char, '\0' };
-        LCD_DrawString(111, 47, unit_str_buf, LCD_COLOR_OFF);
         LCD_DrawString(4, 56, date_str, LCD_COLOR_OFF);
         LCD_DrawString(76, 56, time_str, LCD_COLOR_OFF);
       }

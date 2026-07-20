@@ -20,6 +20,7 @@
 #include "ph_temp.h"
 #include "do_sensor.h"
 #include "ds3231.h"
+#include "user_fram.h"
 
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -71,16 +72,24 @@ static const page_def_t s_pages_en[PAGE_COUNT] = {
     /* ── Main Menu ── */
     [PAGE_MAIN_MENU] = {
         .title      = "Main Menu",
-        .item_count = 4,
+        .item_count = 5,
         .items      = { "1 System Settings",
                         "2 Display Settings",
                         "3 Modbus Settings",
-                        "4 Sensor Settings" },
+                        "4 Sensor Settings",
+                        "5 History Log" },
         .children   = { PAGE_SYSTEM_SETTINGS,
                         PAGE_DISPLAY_MODE,
                         PAGE_MODBUS_SETTINGS,
-                        PAGE_SENSOR_SETTINGS },
+                        PAGE_SENSOR_SETTINGS,
+                        PAGE_HISTORY_LOG },
         .parent     = PAGE_MEASUREMENT,
+    },
+
+    [PAGE_HISTORY_LOG] = {
+        .title      = "History Log",
+        .item_count = 0,
+        .parent     = PAGE_MAIN_MENU,
     },
 
     /* ── System Settings ── */
@@ -389,16 +398,24 @@ static const page_def_t s_pages_vi[PAGE_COUNT] = {
     /* ── Main Menu ── */
     [PAGE_MAIN_MENU] = {
         .title      = "Menu Chinh",
-        .item_count = 4,
+        .item_count = 5,
         .items      = { "1 Cai Dat He Thong",
                         "2 Cai Dat Hien Thi",
                         "3 Cai Dat Modbus",
-                        "4 Cai Dat Cam Bien" },
+                        "4 Cai Dat Cam Bien",
+                        "5 Xem Lai Lich Su" },
         .children   = { PAGE_SYSTEM_SETTINGS,
                         PAGE_DISPLAY_MODE,
                         PAGE_MODBUS_SETTINGS,
-                        PAGE_SENSOR_SETTINGS },
+                        PAGE_SENSOR_SETTINGS,
+                        PAGE_HISTORY_LOG },
         .parent     = PAGE_MEASUREMENT,
+    },
+
+    [PAGE_HISTORY_LOG] = {
+        .title      = "Xem Lai Lich Su",
+        .item_count = 0,
+        .parent     = PAGE_MAIN_MENU,
     },
 
     /* ── System Settings ── */
@@ -745,6 +762,57 @@ static struct {
 } s_do_cal_exec;
 
 static float s_do_temp_cal_edit = 25.0f;
+static uint16_t s_history_view_offset = 0; // 0 = mới nhất, 1 = kế mới nhất...
+
+static void menu_render_history_log(void)
+{
+    uint16_t total_count = Fram_Log_Get_Count();
+
+    if (total_count == 0) {
+        const char *msg = (g_sys_lang == LANG_VI) ? "Chua co du lieu" : "No Data Stored";
+        uint8_t msg_w = (uint8_t)(strlen(msg) * 6);
+        uint8_t msg_x = (uint8_t)((128 - msg_w) / 2);
+        LCD_DrawString(msg_x, 28, msg, LCD_COLOR_ON);
+        return;
+    }
+
+    if (s_history_view_offset >= total_count) {
+        s_history_view_offset = total_count - 1;
+    }
+
+    uint16_t rel_idx = (total_count - 1) - s_history_view_offset;
+
+    EnvLogRecord_t rec;
+    memset(&rec, 0, sizeof(rec));
+
+    if (!Fram_Log_Read_Record(rel_idx, &rec)) {
+        const char *err = (g_sys_lang == LANG_VI) ? "Loi doc FRAM!" : "FRAM Read Error!";
+        LCD_DrawString(16, 28, err, LCD_COLOR_ON);
+        return;
+    }
+
+    struct tm tm_rec;
+    time_t ts = (time_t)rec.timestamp;
+    localtime_r(&ts, &tm_rec);
+
+    char line_hdr[64];
+    snprintf(line_hdr, sizeof(line_hdr), "#%u/%u %02d/%02d %02d:%02d",
+             (unsigned int)(s_history_view_offset + 1), (unsigned int)total_count,
+             tm_rec.tm_mday, tm_rec.tm_mon + 1, tm_rec.tm_hour, tm_rec.tm_min);
+    LCD_DrawString(2, 13, line_hdr, LCD_COLOR_ON);
+
+    char line_ph[32];
+    snprintf(line_ph, sizeof(line_ph), "pH   : %.2f", (float)rec.ph_x100 / 100.0f);
+    LCD_DrawString(2, 23, line_ph, LCD_COLOR_ON);
+
+    char line_temp[32];
+    snprintf(line_temp, sizeof(line_temp), "Temp : %.2f C", (float)rec.temp_x100 / 100.0f);
+    LCD_DrawString(2, 33, line_temp, LCD_COLOR_ON);
+
+    char line_do[32];
+    snprintf(line_do, sizeof(line_do), "DO   : %.2f mg/L", (float)rec.do_x100 / 100.0f);
+    LCD_DrawString(2, 43, line_do, LCD_COLOR_ON);
+}
 
 /* =====================================================================
  * Cai dat gio thu cong (PAGE_TIME_SETTINGS)
@@ -1025,6 +1093,43 @@ static bool btn_edge(btn_idx_t idx)
         return true;
     }
     return s_btn_state[idx] && !s_btn_prev_state[idx];
+}
+
+static void menu_handle_history_log_buttons(void)
+{
+    const page_def_t *page = (g_sys_lang == LANG_VI) ? &s_pages_vi[g_menu.current_page] : &s_pages_en[g_menu.current_page];
+    uint16_t total_count = Fram_Log_Get_Count();
+
+    if (btn_edge(BTN_IDX_ESC)) {
+        s_history_view_offset = 0;
+        goto_page(page->parent);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    // Nút DOWN (▼): Cuộn về quá khứ (#1 -> #2 -> #3 ... -> #total_count)
+    if (btn_edge(BTN_IDX_DOWN)) {
+        if (total_count > 0) {
+            if (s_history_view_offset < total_count - 1) {
+                s_history_view_offset++;
+            } else {
+                s_history_view_offset = 0; // Đang ở bản ghi cũ nhất (#total_count), bấm DOWN sẽ quay về mới nhất (#1)
+            }
+            g_lcd_need_redraw = true;
+        }
+    }
+
+    // Nút UP (▲): Đi từ quá khứ về hiện tại (#total_count -> ... -> #1). Nếu đang ở #1, bấm UP sẽ quay về cũ nhất (#total_count)
+    if (btn_edge(BTN_IDX_UP)) {
+        if (total_count > 0) {
+            if (s_history_view_offset > 0) {
+                s_history_view_offset--;
+            } else {
+                s_history_view_offset = total_count - 1; // Đang ở #1, bấm UP tự động nhảy tới cũ nhất (#total_count)
+            }
+            g_lcd_need_redraw = true;
+        }
+    }
 }
 
 /* =====================================================================
@@ -2050,6 +2155,12 @@ void menu_handle_buttons(void)
         return;
     }
 
+    /* Xử lý phím riêng cho màn hình xem lịch sử dữ liệu FRAM */
+    if (g_menu.current_page == PAGE_HISTORY_LOG) {
+        menu_handle_history_log_buttons();
+        return;
+    }
+
     /* ESC – quay lại trang cha */
     if (btn_edge(BTN_IDX_ESC)) {
         menu_page_t parent = page->parent;
@@ -2416,6 +2527,8 @@ void menu_render(void)
         menu_render_cal_do_exec();
     } else if (g_menu.current_page == PAGE_CAL_DO_TEMP) {
         menu_render_cal_do_temp();
+    } else if (g_menu.current_page == PAGE_HISTORY_LOG) {
+        menu_render_history_log();
     } else {
         /* ── 2. Danh sách mục (y=13..48) ── */
         uint8_t visible = page->item_count - g_menu.scroll_offset;
@@ -2487,7 +2600,6 @@ void menu_render(void)
                 LCD_FillRect(0, y, 128, ITEM_ROW_H, LCD_COLOR_ON);
 
                 // 1. Tính độ rộng thực tế của tên mục (mỗi ký tự rộng 6px)
-                const char *item_str = page->items[idx];
                 int16_t scroll_x = 0;
                 uint16_t text_w = strlen(item_str) * 6;
                 uint16_t view_w = 120 - 4; // Độ rộng khung hiển thị tối đa là 116px (khoảng 19 ký tự)
@@ -2524,7 +2636,7 @@ void menu_render(void)
                 }
             } else {
                 /* Mục bình thường: nền trắng, chữ đen, xén lề tối đa 120px */
-                LCD_DrawStringScroll(4, y + 1, page->items[idx], 120, 0, LCD_COLOR_ON);
+                LCD_DrawStringScroll(4, y + 1, item_str, 120, 0, LCD_COLOR_ON);
                 if (is_active_choice) {
                     LCD_DrawChar(112, y + 1, '*', LCD_COLOR_ON);
                 }

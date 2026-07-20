@@ -5,6 +5,8 @@
 #include "string.h"
 #include "user_ouput.h"
 #include "user_azure.h"
+#include "ph_temp.h"
+#include "time.h"
 
 #define MAX_DEVICE          10
 #define DEVICE_NAME_LEN     16
@@ -77,8 +79,7 @@ static bool spi_master_init()
 
 
 
-    gpio_set_direction(PIN_NUM_WP, GPIO_MODE_OUTPUT);
-    gpio_set_level(PIN_NUM_WP, 1);
+    // PIN_NUM_WP is tied to 3V3 by hardware default
 
     // // Khởi tạo BUS SPI
     // ret = spi_bus_initialize(SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
@@ -261,24 +262,190 @@ bool Fram_Read_Data(uint16_t address, uint8_t *data, uint16_t size)
 }
 
 
+
+// === FRAM Environment Logging Implementation ===
+
+bool Fram_Log_Init(void)
+{
+    if (!Fram_Init()) {
+        ESP_LOGE(FRAM_TAG, "Fram_Init failed during Fram_Log_Init");
+        return false;
+    }
+
+    Fram_Log_Header_t header;
+    memset(&header, 0, sizeof(header));
+
+    if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
+        ESP_LOGE(FRAM_TAG, "Failed to read FRAM Log Header");
+        return false;
+    }
+
+    if (header.magic != FRAM_LOG_MAGIC ||
+        header.max_records != FRAM_LOG_MAX_RECORDS ||
+        header.record_size != FRAM_LOG_RECORD_SIZE) {
+        
+        ESP_LOGW(FRAM_TAG, "Invalid/Uninitialized FRAM Log Header. Initializing new Header...");
+        memset(&header, 0, sizeof(header));
+        header.magic = FRAM_LOG_MAGIC;
+        header.head_index = 0;
+        header.tail_index = 0;
+        header.record_count = 0;
+        header.max_records = FRAM_LOG_MAX_RECORDS;
+        header.record_size = FRAM_LOG_RECORD_SIZE;
+
+        Fram_Write_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
+        ESP_LOGI(FRAM_TAG, "FRAM Environment Log Header initialized successfully.");
+    } else {
+        ESP_LOGI(FRAM_TAG, "FRAM Log Header valid: count=%u, head=%u, tail=%u",
+                 header.record_count, header.head_index, header.tail_index);
+    }
+
+    return true;
+}
+
+bool Fram_Log_Write_Record(float ph, float temp, float do_mg_l, uint8_t flags)
+{
+    if (!Fram_Init()) {
+        return false;
+    }
+
+    Fram_Log_Header_t header;
+    if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
+        ESP_LOGE(FRAM_TAG, "Write Record failed: cannot read header");
+        return false;
+    }
+
+    if (header.magic != FRAM_LOG_MAGIC) {
+        if (!Fram_Log_Init()) return false;
+        Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
+    }
+
+    // Đóng gói dữ liệu (float -> int x100)
+    EnvLogRecord_t rec;
+    memset(&rec, 0, sizeof(rec));
+    rec.timestamp = (uint32_t)time(NULL);
+    rec.ph_x100 = (uint16_t)(ph * 100.0f + 0.5f);
+    
+    if (temp >= 0) {
+        rec.temp_x100 = (int16_t)(temp * 100.0f + 0.5f);
+    } else {
+        rec.temp_x100 = (int16_t)(temp * 100.0f - 0.5f);
+    }
+    
+    rec.do_x100 = (uint16_t)(do_mg_l * 100.0f + 0.5f);
+    rec.flags = flags;
+    rec.reserved = 0;
+
+    // Tính địa chỉ ô nhớ slot hiện tại
+    uint16_t write_addr = FRAM_LOG_DATA_START + (header.head_index * FRAM_LOG_RECORD_SIZE);
+
+    Fram_Write_Data(write_addr, (uint8_t *)&rec, sizeof(rec));
+
+    uint16_t written_slot = header.head_index;
+
+    // Tăng con trỏ head và quay vòng phần mềm (Software Wrap)
+    header.head_index = (header.head_index + 1) % FRAM_LOG_MAX_RECORDS;
+
+    if (header.record_count < FRAM_LOG_MAX_RECORDS) {
+        header.record_count++;
+    } else {
+        // Đã đầy bộ nhớ: Đẩy con trỏ tail_index để loại bỏ bản ghi cũ nhất
+        header.tail_index = (header.tail_index + 1) % FRAM_LOG_MAX_RECORDS;
+    }
+
+    // Ghi đè cập nhật Header lại vào FRAM
+    Fram_Write_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
+
+    ESP_LOGI(FRAM_TAG, "Log written at slot %u (addr 0x%04X): pH=%.2f, Temp=%.2f, DO=%.2f | Total count=%u",
+             written_slot, write_addr, ph, temp, do_mg_l, header.record_count);
+
+    return true;
+}
+
+bool Fram_Log_Read_Record(uint16_t relative_index, EnvLogRecord_t *record_out)
+{
+    if (record_out == NULL || !Fram_Init()) return false;
+
+    Fram_Log_Header_t header;
+    if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
+        return false;
+    }
+
+    if (header.magic != FRAM_LOG_MAGIC || relative_index >= header.record_count) {
+        return false;
+    }
+
+    // Tính slot index: relative_index = 0 là bản ghi cũ nhất (tail_index)
+    uint16_t slot_index = (header.tail_index + relative_index) % FRAM_LOG_MAX_RECORDS;
+    uint16_t read_addr = FRAM_LOG_DATA_START + (slot_index * FRAM_LOG_RECORD_SIZE);
+
+    return Fram_Read_Data(read_addr, (uint8_t *)record_out, sizeof(EnvLogRecord_t));
+}
+
+bool Fram_Log_Read_Latest(EnvLogRecord_t *record_out)
+{
+    if (record_out == NULL || !Fram_Init()) return false;
+
+    Fram_Log_Header_t header;
+    if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
+        return false;
+    }
+
+    if (header.magic != FRAM_LOG_MAGIC || header.record_count == 0) {
+        return false;
+    }
+
+    return Fram_Log_Read_Record(header.record_count - 1, record_out);
+}
+
+uint16_t Fram_Log_Get_Count(void)
+{
+    if (!Fram_Init()) return 0;
+
+    Fram_Log_Header_t header;
+    if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
+        return 0;
+    }
+
+    if (header.magic != FRAM_LOG_MAGIC) return 0;
+    return header.record_count;
+}
+
+void Fram_Log_Clear_All(void)
+{
+    if (!Fram_Init()) return;
+
+    Fram_Log_Header_t header;
+    memset(&header, 0, sizeof(header));
+    header.magic = FRAM_LOG_MAGIC;
+    header.head_index = 0;
+    header.tail_index = 0;
+    header.record_count = 0;
+    header.max_records = FRAM_LOG_MAX_RECORDS;
+    header.record_size = FRAM_LOG_RECORD_SIZE;
+
+    Fram_Write_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
+    ESP_LOGI(FRAM_TAG, "FRAM Environment Log cleared successfully.");
+}
+
 void User_Fram_Task()
 {
-    uint8_t buf[56] = {0};
-    // memcpy(buf, "Hello spi, add more data", strlen("Hello spi, add more data"));
+    Fram_Log_Init();
 
-    spi_master_init();
+    // Chờ 10 giây ban đầu cho cảm biến ổn định và đồng bộ thời gian nếu có
+    vTaskDelay(pdMS_TO_TICKS(10000));
 
-
-    // Fram_Write_Data(0x0000, buf, sizeof(buf));
-    // memset(buf, 0, sizeof(buf));
-    Fram_Read_Data(0x0000, buf, 20);
-    ESP_LOGI("FRAM: ", "Data: %s", buf);
-    // Fram_Write_Enable();
-
-    while(1)
+    while (1)
     {
-        
+        PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        uint8_t flags = 0;
+        if (status.is_calibrated) flags |= (1 << 0);
+        if (status.do_valid)       flags |= (1 << 1);
+
+        Fram_Log_Write_Record(status.ph, status.temperature, status.do_mg_l, flags);
+
+        // Lưu định kỳ 1 phút (60,000 ms)
+        vTaskDelay(pdMS_TO_TICKS(60000));
     }
 }

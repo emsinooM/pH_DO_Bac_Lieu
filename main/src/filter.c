@@ -1,5 +1,6 @@
 #include "filter.h"
 #include <stddef.h>
+#include <stdlib.h>
 #include <math.h>
 
 filter_level_t g_filter_level = FILTER_LEVEL_L;
@@ -155,4 +156,111 @@ int32_t apply_median_filter(MedianFilter_t *filter, int32_t new_val) {
     }
 
     return median;
+}
+
+SpikeFilter_t ph_spike_filter = {0};
+SpikeFilter_t temp_spike_filter = {0};
+
+void reset_moving_average_val(MovingAverage_t *filter, int32_t fill_val) {
+    if (filter->mutex != NULL) {
+        xSemaphoreTake(filter->mutex, portMAX_DELAY);
+    }
+
+    uint16_t current_size = filter->size;
+    if (current_size == 0 || current_size > MAX_FILTER_SIZE) {
+        current_size = FILTER_L_SIZE;
+    }
+
+    for (int i = 0; i < MAX_FILTER_SIZE; i++) {
+        filter->buffer[i] = fill_val;
+    }
+    filter->index = 0;
+    filter->is_filled = true;
+    filter->running_sum = (int64_t)fill_val * current_size;
+
+    if (filter->mutex != NULL) {
+        xSemaphoreGive(filter->mutex);
+    }
+}
+
+void reset_median_filter_val(MedianFilter_t *filter, int32_t fill_val) {
+    if (filter->mutex != NULL) {
+        xSemaphoreTake(filter->mutex, portMAX_DELAY);
+    }
+
+    filter->index = 0;
+    filter->count = MEDIAN_FILTER_SIZE;
+    for (int i = 0; i < MEDIAN_FILTER_SIZE; i++) {
+        filter->buffer[i] = fill_val;
+    }
+
+    if (filter->mutex != NULL) {
+        xSemaphoreGive(filter->mutex);
+    }
+}
+
+void init_spike_filter(SpikeFilter_t *filter, int32_t initial_val, int32_t max_delta, uint8_t max_allowed_spikes) {
+    if (filter->mutex == NULL) {
+        filter->mutex = xSemaphoreCreateMutex();
+    }
+    if (filter->mutex != NULL) {
+        xSemaphoreTake(filter->mutex, portMAX_DELAY);
+    }
+
+    filter->last_valid_val = initial_val;
+    filter->max_delta = max_delta;
+    filter->consecutive_spikes = 0;
+    filter->max_allowed_spikes = max_allowed_spikes;
+    filter->is_initialized = true;
+
+    if (filter->mutex != NULL) {
+        xSemaphoreGive(filter->mutex);
+    }
+}
+
+int32_t apply_spike_filter(SpikeFilter_t *filter, int32_t new_val, bool *out_step_detected) {
+    int32_t result = new_val;
+    bool step_detected = false;
+
+    if (filter->mutex != NULL) {
+        xSemaphoreTake(filter->mutex, portMAX_DELAY);
+    }
+
+    if (!filter->is_initialized) {
+        filter->last_valid_val = new_val;
+        filter->consecutive_spikes = 0;
+        filter->is_initialized = true;
+    }
+
+    int32_t delta = labs(new_val - filter->last_valid_val);
+    if (delta > filter->max_delta) {
+        filter->consecutive_spikes++;
+        if (filter->consecutive_spikes <= filter->max_allowed_spikes) {
+            // Từ chối giá trị nhiễu đột biến, trả về giá trị hợp lệ gần nhất
+            result = filter->last_valid_val;
+            step_detected = false;
+        } else {
+            // Nhiễu kéo dài quá max_allowed_spikes -> Xác nhận là bước nhảy thực sự!
+            filter->last_valid_val = new_val;
+            filter->consecutive_spikes = 0;
+            result = new_val;
+            step_detected = true;
+        }
+    } else {
+        // Tín hiệu biến thiên trong ngưỡng hợp lệ
+        filter->last_valid_val = new_val;
+        filter->consecutive_spikes = 0;
+        result = new_val;
+        step_detected = false;
+    }
+
+    if (filter->mutex != NULL) {
+        xSemaphoreGive(filter->mutex);
+    }
+
+    if (out_step_detected) {
+        *out_step_detected = step_detected;
+    }
+
+    return result;
 }

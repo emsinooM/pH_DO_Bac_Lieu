@@ -2,6 +2,7 @@
 #define CS1237_H
 
 #include "driver/gpio.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 // Cấu hình chân GPIO mặc định
@@ -20,8 +21,8 @@ void init_system_gpios(void);
 void write_cs1237_config(gpio_num_t sclk_pin, gpio_num_t data_pin,
                          uint8_t config_val);
 
-// Đọc giá trị ADC thô từ CS1237
-int32_t read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin);
+// Đọc giá trị ADC thô từ CS1237 (trả về true nếu thành công, false nếu timeout)
+bool read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin, int32_t *out_raw);
 
 uint8_t read_cs1237_config(gpio_num_t sclk_pin, gpio_num_t data_pin);
 

@@ -130,7 +130,7 @@ uint8_t config_val) {
   portEXIT_CRITICAL(&mux);
 }
 
-int32_t read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin) {
+bool read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin, int32_t *out_raw) {
   uint32_t data = 0;
   int timeout = 10000;
 
@@ -140,8 +140,12 @@ int32_t read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin) {
 
   while (gpio_get_level(data_pin) == 1) {
     delay_us(10);
-    if (--timeout <= 0)
-      return 0;
+    if (--timeout <= 0) {
+      if (out_raw) {
+        *out_raw = 0;
+      }
+      return false;
+    }
   }
 
   portENTER_CRITICAL(&mux);
@@ -181,7 +185,11 @@ int32_t read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin) {
     raw_signed = (int32_t)data;
   }
 
-  return raw_signed;
+  if (out_raw) {
+    *out_raw = raw_signed;
+  }
+
+  return true;
 }
 
 uint8_t read_cs1237_config(gpio_num_t sclk_pin, gpio_num_t data_pin) {

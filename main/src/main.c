@@ -12,6 +12,7 @@
 #include "ph_temp.h"
 #include "screen_disp.h"
 #include "user_azure.h"
+#include "user_fram.h"
 #include "user_http_server.h"
 #include "user_system.h"
 #include "user_time.h"
@@ -51,8 +52,13 @@ static void ph_temp_sensor_task(void *pvParameters) {
   ESP_LOGI(TAG, "ph_temp_sensor_task bat dau chay trên Core 1");
 
   // Đọc mẫu ban đầu để nạp sẵn giá trị cho bộ lọc trung vị (tránh lệch/trễ lúc khởi động)
-  int32_t init_temp = read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN);
-  int32_t init_ph = read_cs1237_raw(PH_SCLK_PIN, PH_DATA_PIN);
+  int32_t init_temp = 0;
+  int32_t init_ph = 0;
+  read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN, &init_temp);
+  read_cs1237_raw(PH_SCLK_PIN, PH_DATA_PIN, &init_ph);
+
+  init_spike_filter(&temp_spike_filter, init_temp, SPIKE_TEMP_MAX_DELTA_RAW, SPIKE_MAX_ALLOWED_COUNT);
+  init_spike_filter(&ph_spike_filter, init_ph, SPIKE_PH_MAX_DELTA_RAW, SPIKE_MAX_ALLOWED_COUNT);
 
   init_median_filter(&temp_median_filter, init_temp);
   init_median_filter(&ph_median_filter, init_ph);
@@ -63,22 +69,62 @@ static void ph_temp_sensor_task(void *pvParameters) {
     int32_t temp_med = 0;
     int32_t temp_filtered = 0;
     float current_temp = 25.0f;
+    bool temp_valid = true;
+
     if (g_temp_mode == TEMP_MODE_MTC_C || g_temp_mode == TEMP_MODE_MTC_F) {
         current_temp = g_manual_temp;
+        temp_valid = true;
     } else {
-        temp_raw = read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN);
-        temp_med = apply_median_filter(&temp_median_filter, temp_raw);
-        temp_filtered = apply_moving_average(&temp_filter, temp_med);
-        current_temp = calculate_temperature(temp_filtered, true) + g_temp_offset; // true = PT1000
-        if (current_temp < -40.0f || current_temp > 150.0f) {
-            current_temp = 25.0f; // Khôi phục 25C nếu đầu dò bị ngắt hoặc đo bất thường
+        bool temp_read_ok = read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN, &temp_raw);
+        if (!temp_read_ok) {
+            temp_valid = false;
+            current_temp = 25.0f; // Bù nhiệt mặc định 25C cho thuật toán pH nếu đo bị lỗi
+        } else {
+            bool temp_step_detected = false;
+            int32_t temp_spiked = apply_spike_filter(&temp_spike_filter, temp_raw, &temp_step_detected);
+            if (temp_step_detected) {
+                reset_median_filter_val(&temp_median_filter, temp_spiked);
+                reset_moving_average_val(&temp_filter, temp_spiked);
+                ESP_LOGI(TAG, "Phat hien buoc nhay nhiet do thuc te! Flush buffer voi ADC raw=%" PRId32, temp_spiked);
+            }
+            temp_med = apply_median_filter(&temp_median_filter, temp_spiked);
+            temp_filtered = apply_moving_average(&temp_filter, temp_med);
+            float measured_temp = calculate_temperature(temp_filtered, true) + g_temp_offset; // true = PT1000
+            if (measured_temp < 0.0f || measured_temp > 60.0f) {
+                temp_valid = false;
+                current_temp = 25.0f; // Bù nhiệt mặc định 25C cho thuật toán pH nếu đo bị lỗi
+            } else {
+                temp_valid = true;
+                current_temp = measured_temp;
+            }
         }
     }
 
     // 2. KÊNH pH
-    int32_t ph_raw = read_cs1237_raw(PH_SCLK_PIN, PH_DATA_PIN);
-    int32_t ph_med = apply_median_filter(&ph_median_filter, ph_raw);
-    int32_t ph_filtered = apply_moving_average(&ph_filter, ph_med);
+    int32_t ph_raw = 0;
+    bool ph_read_ok = read_cs1237_raw(PH_SCLK_PIN, PH_DATA_PIN, &ph_raw);
+    int32_t ph_med = 0;
+    int32_t ph_filtered = 0;
+    float v_probe_mv = 0;
+    bool ph_valid = true;
+    float current_ph = 7.00f;
+
+    if (!ph_read_ok) {
+        ph_valid = false;
+        current_ph = 7.00f;
+    } else {
+        bool ph_step_detected = false;
+        int32_t ph_spiked = apply_spike_filter(&ph_spike_filter, ph_raw, &ph_step_detected);
+        if (ph_step_detected) {
+            reset_median_filter_val(&ph_median_filter, ph_spiked);
+            reset_moving_average_val(&ph_filter, ph_spiked);
+            ESP_LOGI(TAG, "Phat hien buoc nhay pH thuc te! Flush buffer voi ADC raw=%" PRId32, ph_spiked);
+        }
+        ph_med = apply_median_filter(&ph_median_filter, ph_spiked);
+        ph_filtered = apply_moving_average(&ph_filter, ph_med);
+        current_ph = calculate_ph_with_atc_calibrated(
+            &ph_cal, ph_filtered, current_temp, &v_probe_mv, &ph_valid);
+    }
 
     // Tính v_diff cho cả raw, med và filtered (đổi ra mV)
     float v_diff_raw_mv = (((float)ph_raw * V_REF_ADC) / ADC_DIVISOR) * 1000.0f;
@@ -86,26 +132,29 @@ static void ph_temp_sensor_task(void *pvParameters) {
     float v_diff_filt_mv =
         (((float)ph_filtered * V_REF_ADC) / ADC_DIVISOR) * 1000.0f;
 
-    float v_probe_mv = 0;
-    float current_ph = calculate_ph_with_atc_calibrated(
-        &ph_cal, ph_filtered, current_temp, &v_probe_mv);
-
     // =========================================================================
-    // CODE MÔ PHỎNG SENSOR (TỰ ĐỘNG THAY ĐỔI 5 GIÁ TRỊ)
+    // CODE MÔ PHỎNG SENSOR (TỰ ĐỘNG THAY ĐỔI 5 GIÁ TRỊ BAO GỒM CẢ CÁC GIÁ TRỊ LỖI)
     // Để chuyển sang chạy thực tế: Đổi '#if 1' bên dưới thành '#if 0' hoặc comment lại toàn bộ khối này
     // =========================================================================
 #if 0
-    static const float s_sim_values[5] = {12.34f, 5.67f, 8.90f, 0.12f, 3.45f};
-    static size_t s_sim_ph_idx = 0;
-    static size_t s_sim_temp_idx = 0;
+    /* Chuỗi mô phỏng 5 bước: 
+     * Bước 0: pH=7.00 (OK), Temp=28.5C (OK)
+     * Bước 1: pH=-1.50 (LỖI -> N/A), Temp=-15.0C (LỖI -> N/A)
+     * Bước 2: pH=6.86 (OK), Temp=32.0C (OK)
+     * Bước 3: pH=15.20 (LỖI -> N/A), Temp=85.0C (LỖI -> N/A)
+     * Bước 4: pH=3.45 (OK), Temp=25.3C (OK)
+     */
+    static const float s_sim_ph[5]   = { 7.00f, -1.50f,  6.86f, 15.20f,  3.45f };
+    static const float s_sim_temp[5] = {28.50f, -15.00f, 32.00f, 85.00f, 25.30f };
+    static size_t s_sim_idx = 0;
 
-    // Mô phỏng pH hiển thị lần lượt 5 giá trị
-    current_ph = s_sim_values[s_sim_ph_idx];
-    s_sim_ph_idx = (s_sim_ph_idx + 1) % 5;
+    current_ph = s_sim_ph[s_sim_idx];
+    ph_valid = (current_ph >= 0.0f && current_ph <= 14.0f);
 
-    // Mô phỏng Nhiệt độ hiển thị lần lượt 5 giá trị tương tự
-    current_temp = s_sim_values[s_sim_temp_idx];
-    s_sim_temp_idx = (s_sim_temp_idx + 1) % 5;
+    current_temp = s_sim_temp[s_sim_idx];
+    temp_valid = (current_temp >= 0.0f && current_temp <= 60.0f);
+
+    s_sim_idx = (s_sim_idx + 1) % 5;
 #endif
     // =========================================================================
 
@@ -117,18 +166,18 @@ static void ph_temp_sensor_task(void *pvParameters) {
       last_ph_log_time = now;
       first_ph_log = false;
       ESP_LOGI(TAG,
-               "Nhiệt độ: %.2f C | ADC Temp: %" PRId32 " | ADC pH Raw: %" PRId32
+               "Nhiệt độ: %.2f C (valid:%d) | ADC Temp: %" PRId32 " | ADC pH Raw: %" PRId32
                " (v_diff: %.2f mV) | Med: %" PRId32 " (v_diff: %.2f mV) | Filt: %" PRId32 " (v_diff: %.2f mV)"
-               " | V_Probe: %.2f mV | pH (ATC): %.2f",
-               current_temp, temp_filtered, ph_raw, v_diff_raw_mv, ph_med, v_diff_med_mv, ph_filtered,
-               v_diff_filt_mv, v_probe_mv, current_ph);
+               " | V_Probe: %.2f mV | pH (ATC): %.2f (valid:%d)",
+               current_temp, temp_valid, temp_filtered, ph_raw, v_diff_raw_mv, ph_med, v_diff_med_mv, ph_filtered,
+               v_diff_filt_mv, v_probe_mv, current_ph, ph_valid);
     }
 
     // Cập nhật giá trị pH và Nhiệt độ thực tế lên màn hình hiển thị
     screen_update_values(current_ph, current_temp);
 
     // Cập nhật trạng thái cảm biến toàn cục
-    Update_Sensor_Measurements(current_ph, current_temp, v_probe_mv);
+    Update_Sensor_Measurements(current_ph, ph_valid, current_temp, temp_valid, v_probe_mv);
 
     vTaskDelay(pdMS_TO_TICKS(500));
   }
@@ -282,6 +331,10 @@ void app_main(void) {
   // --- Khởi chạy task đọc cảm biến pH & Nhiệt độ (CS1237) ---
   xTaskCreatePinnedToCore(ph_temp_sensor_task, "ph_temp_sensor_task", 4096,
                           NULL, 4, NULL, 1);
+
+  // --- Khởi chạy task ghi dữ liệu môi trường vào FRAM định kỳ 1 phút/lần ---
+  xTaskCreatePinnedToCore((TaskFunction_t)User_Fram_Task, "User_Fram_Task", 3072,
+                          NULL, 3, NULL, 1);
 
   ESP_LOGI(TAG, "Da khoi tao he thong giam sat pH, Nhiet do & DO hoan chinh.");
 
