@@ -272,6 +272,13 @@ void LCD_DrawMediumString(uint8_t x, uint8_t y, const char *str, uint8_t color);
 uint8_t LCD_GetMediumStringWidth(const char *str);
 
 /* =====================================================================
+ * API – Icon trạng thái (Wi-Fi & Cloud)
+ * ===================================================================== */
+void LCD_DrawWifiIcon(uint8_t x, uint8_t y, int8_t rssi, bool is_connected, uint8_t color);
+void LCD_DrawCloudIcon(uint8_t x, uint8_t y, bool is_azure_connected, uint8_t color);
+void LCD_DrawTopStatusIcons(uint8_t wifi_x, uint8_t cloud_x, uint8_t y, uint8_t color);
+
+/* =====================================================================
  * API – FreeRTOS Task
  * ===================================================================== */
 

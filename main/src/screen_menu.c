@@ -806,7 +806,7 @@ static void menu_render_history_log(void)
     LCD_DrawString(2, 23, line_ph, LCD_COLOR_ON);
 
     char line_temp[32];
-    snprintf(line_temp, sizeof(line_temp), "Temp : %.2f C", (float)rec.temp_x100 / 100.0f);
+    snprintf(line_temp, sizeof(line_temp), "Temp : %.2f \xB0" "C", (float)rec.temp_x100 / 100.0f);
     LCD_DrawString(2, 33, line_temp, LCD_COLOR_ON);
 
     char line_do[32];

@@ -1,6 +1,7 @@
 #include "do_sensor.h"
 #include "esp_err.h"
 #include "ph_temp.h"
+#include "filter.h"
 #include "esp_rom_sys.h"
 #include "user_storage.h"
 
@@ -460,7 +461,7 @@ esp_err_t do_sensor_kog206_boot(void) {
   return ESP_OK;
 }
 
-static bool read_sensor_once(float *do_mg_l, float *temp_c, float *sat_pct,
+static __attribute__((unused)) bool read_sensor_once(float *do_mg_l, float *temp_c, float *sat_pct,
                              int *err) {
   uint16_t regs[6] = {0};
   int e;
@@ -528,14 +529,14 @@ static void do_sensor_task(void *arg) {
     // CODE MÔ PHỎNG SENSOR DO MODBUS (HIỂN THỊ NGẪU NHIÊN 5 GIÁ TRỊ)
     // Để chuyển sang chạy thực tế: Đổi '#if 1' bên dưới thành '#if 0'
     // =========================================================================
-#if 0
+#if 1
   ESP_LOGI(TAG, "DO Sensor Dang chay o che do MO PHONG (Modbus Status = TRUE)");
-  static const float s_sim_do_values[5] = {12.34f, 5.67f, 8.90f, 0.12f, 3.45f};
+  static const float s_sim_do_values[6] = {1.23f, 5.56f, 7.89f, 0.45f, 6.12f, 9.34f};
 
   while (true) {
     do_sensor_reading_t reading = {
-        .do_mg_l = s_sim_do_values[rand() % 5],        // Hiển thị ngẫu nhiên 5 giá trị ở thứ tự khác pH
-        .temp_c = s_sim_do_values[rand() % 5],         // Nhiệt độ DO hiển thị ngẫu nhiên 5 giá trị tương tự
+        .do_mg_l = s_sim_do_values[rand() % 6],        // Hiển thị ngẫu nhiên 5 giá trị ở thứ tự khác pH
+        .temp_c = s_sim_do_values[rand() % 6],         // Nhiệt độ DO hiển thị ngẫu nhiên 5 giá trị tương tự
         .saturation_pct = 85.0f,
         .valid = true,                                 // Giả lập trạng thái kết nối Modbus là True
         .error_code = 0,
@@ -549,6 +550,8 @@ static void do_sensor_task(void *arg) {
   // CHẠY THỰC TẾ TRÊN PHẦN CỨNG MODBUS RS485:
   do_sensor_probe();
   do_sensor_kog206_boot();
+
+  kalman1d_init(&do_kalman_filter, 0.0f, 0.005f, 0.10f);
 
   while (true) {
     do_sensor_reading_t reading = {
@@ -570,16 +573,30 @@ static void do_sensor_task(void *arg) {
       err = -1;
     }
 
+    static uint32_t s_do_fail_count = 0;
     if (read_ok) {
       reading.valid = true;
+      s_do_fail_count = 0;
+      reading.do_mg_l = kalman1d_update(&do_kalman_filter, reading.do_mg_l);
     } else {
       reading.error_code = err;
-      ESP_LOGW(TAG, "read failed: %s (%d)", do_sensor_error_str(err), err);
+      s_do_fail_count++;
+      ESP_LOGW(TAG, "read failed: %s (%d), fail_count=%" PRIu32, do_sensor_error_str(err), err, s_do_fail_count);
       if (err == -2) {
         ESP_LOGW(TAG,
                  "timeout -> kiem tra: nguon 12-24V, GND chung, doi day A/B, "
                  "DE->GPIO%d",
                  s_cfg.pin_de);
+      }
+      if (s_do_fail_count >= 10) {
+        ESP_LOGW(TAG, "DO Modbus RS485 mat ket noi lien tiep %" PRIu32 " lan -> Tien hanh khoi tao lai driver UART%d RS485...",
+                 s_do_fail_count, s_cfg.uart_port);
+        uart_flush(s_cfg.uart_port);
+        uart_driver_delete(s_cfg.uart_port);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        uart_rs485_init();
+        do_sensor_kog206_boot();
+        s_do_fail_count = 0;
       }
     }
 

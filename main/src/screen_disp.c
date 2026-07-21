@@ -12,6 +12,9 @@
 #include "ph_temp.h"
 #include "screen_menu.h"
 #include "large_font.h"
+#include "esp_wifi.h"
+#include "user_system.h"
+#include "user_azure.h"
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -575,6 +578,82 @@ uint8_t LCD_GetMediumStringWidth(const char *str) {
   return total;
 }
 
+/* =====================================================================
+ * Icon trạng thái (Wi-Fi & Cloud)
+ * ===================================================================== */
+void LCD_DrawWifiIcon(uint8_t x, uint8_t y, int8_t rssi, bool is_connected, uint8_t color) {
+  uint8_t bars = 0;
+  if (is_connected) {
+    if (rssi >= -55) bars = 4;
+    else if (rssi >= -65) bars = 3;
+    else if (rssi >= -75) bars = 2;
+    else bars = 1;
+  }
+
+  if (bars == 0) {
+    /* Chấm ở đáy + Dấu gạch chéo 'X' thể hiện không có Wi-Fi */
+    LCD_DrawPixel(x + 4, y + 7, color);
+    LCD_DrawLine(x + 1, y + 1, x + 7, y + 7, color);
+    LCD_DrawLine(x + 1, y + 7, x + 7, y + 1, color);
+    return;
+  }
+
+  /* Vạch 1: Chấm ở tâm đáy (y=7) */
+  if (bars >= 1) {
+    LCD_DrawPixel(x + 4, y + 7, color);
+  }
+
+  /* Vạch 2: Vòng cung nhỏ (y=4..5) */
+  if (bars >= 2) {
+    LCD_DrawPixel(x + 3, y + 5, color);
+    LCD_DrawPixel(x + 4, y + 4, color);
+    LCD_DrawPixel(x + 5, y + 5, color);
+  }
+
+  /* Vạch 3: Vòng cung vừa (y=2..3) */
+  if (bars >= 3) {
+    LCD_DrawPixel(x + 2, y + 3, color);
+    LCD_DrawHLine(x + 3, y + 2, 3, color);
+    LCD_DrawPixel(x + 6, y + 3, color);
+  }
+
+  /* Vạch 4: Vòng cung lớn (y=0..1) */
+  if (bars >= 4) {
+    LCD_DrawPixel(x + 1, y + 1, color);
+    LCD_DrawHLine(x + 2, y + 0, 5, color);
+    LCD_DrawPixel(x + 7, y + 1, color);
+  }
+}
+
+void LCD_DrawCloudIcon(uint8_t x, uint8_t y, bool is_azure_connected, uint8_t color) {
+  LCD_DrawHLine(x + 1, y + 6, 8, color);
+  LCD_DrawVLine(x, y + 4, 2, color);
+  LCD_DrawPixel(x + 1, y + 3, color);
+  LCD_DrawHLine(x + 2, y + 2, 2, color);
+  LCD_DrawPixel(x + 4, y + 1, color);
+  LCD_DrawHLine(x + 5, y + 0, 2, color);
+  LCD_DrawPixel(x + 7, y + 1, color);
+  LCD_DrawPixel(x + 8, y + 2, color);
+  LCD_DrawVLine(x + 9, y + 3, 3, color);
+
+  if (!is_azure_connected) {
+    LCD_DrawLine(x, y, x + 9, y + 6, color);
+  }
+}
+
+void LCD_DrawTopStatusIcons(uint8_t wifi_x, uint8_t cloud_x, uint8_t y, uint8_t color) {
+  bool wifi_conn = Is_System_Internet_Connected();
+  int8_t rssi = -100;
+  if (wifi_conn) {
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+      rssi = ap_info.rssi;
+    }
+  }
+  LCD_DrawWifiIcon(wifi_x, y, rssi, wifi_conn, color);
+  LCD_DrawCloudIcon(cloud_x, y, IoTHubHandle.isAzureInitialized, color);
+}
+
 static uint8_t lcd_text_width(const char *str) {
   return (uint8_t)(strlen(str) * 6);
 }
@@ -1001,19 +1080,19 @@ static void lcd_draw_measurement_numbers(const char *ph_str, const char *do_str)
     const uint8_t left_x = 2;
     const uint8_t right_x = 65;
     const uint8_t panel_w = 61;
-    const uint8_t area_y = 11;
+    const uint8_t area_y = 10;
     const uint8_t area_bottom = 45;
     const uint8_t val_y = 14;
     const uint8_t unit_y = 34;
 
     /* Clear panel display area to eliminate leftover pixel artifacts */
-    LCD_FillRect(left_x, area_y, panel_w, area_bottom - area_y, LCD_COLOR_OFF);
-    LCD_FillRect(right_x, area_y, panel_w, area_bottom - area_y, LCD_COLOR_OFF);
+    LCD_FillRect(left_x, area_y, panel_w, area_bottom - area_y - 1, LCD_COLOR_OFF);
+    LCD_FillRect(right_x, area_y, panel_w, area_bottom - area_y - 1, LCD_COLOR_OFF);
 
     LCD_DrawVLine(split_x - 1, area_y, area_bottom - area_y + 1, LCD_COLOR_ON);
     LCD_DrawVLine(split_x, area_y, area_bottom - area_y + 1, LCD_COLOR_ON);
-    LCD_DrawHLine(left_x, area_bottom, panel_w, LCD_COLOR_ON);
-    LCD_DrawHLine(right_x, area_bottom, panel_w, LCD_COLOR_ON);
+    LCD_DrawHLine(0, area_bottom - 1, 128, LCD_COLOR_ON);
+    LCD_DrawHLine(0, area_bottom, 128, LCD_COLOR_ON);
 
     lcd_draw_dual_metric(left_x, panel_w, val_y, unit_y, ph_str, "pH", false);
     lcd_draw_dual_metric(right_x, panel_w, val_y, unit_y, do_str, "mg/L", false);
@@ -1266,12 +1345,9 @@ static void lcd_demo_task(void *arg) {
         /* ── Che do so ── */
         /* Top bar */
         LCD_FillRect(0, 0, 128, 10, LCD_COLOR_ON);
-        if (g_sys_lang == LANG_VI) {
-          LCD_DrawString(4, 1, "MebiEco", LCD_COLOR_OFF);
-        } else {
-          LCD_DrawString(4, 1, "MebiEco", LCD_COLOR_OFF);
-        }
-        LCD_DrawString(80, 1, "RS485", LCD_COLOR_OFF);
+        LCD_DrawString(4, 1, "RS485", LCD_COLOR_OFF);
+        LCD_DrawTopStatusIcons(50, 63, 1, LCD_COLOR_OFF);
+        LCD_DrawString(84, 1, "MebiEco", LCD_COLOR_OFF);
 
         /* Đường viền dọc vùng giữa (2px mỗi bên) */
         LCD_DrawVLine(0, 10, 36, LCD_COLOR_ON);

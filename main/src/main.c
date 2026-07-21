@@ -57,6 +57,14 @@ static void ph_temp_sensor_task(void *pvParameters) {
   read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN, &init_temp);
   read_cs1237_raw(PH_SCLK_PIN, PH_DATA_PIN, &init_ph);
 
+  float init_temp_c = calculate_temperature(init_temp, true) + g_temp_offset;
+  ewma_init(&temp_ewma_filter, init_temp_c, 0.10f);
+
+  float init_v_mv = 0;
+  bool init_valid = true;
+  float init_ph_val = calculate_ph_with_atc_calibrated(&ph_cal, init_ph, init_temp_c, &init_v_mv, &init_valid);
+  kalman1d_init(&ph_kalman_filter, init_ph_val, 0.001f, 0.05f);
+
   init_spike_filter(&temp_spike_filter, init_temp, SPIKE_TEMP_MAX_DELTA_RAW, SPIKE_MAX_ALLOWED_COUNT);
   init_spike_filter(&ph_spike_filter, init_ph, SPIKE_PH_MAX_DELTA_RAW, SPIKE_MAX_ALLOWED_COUNT);
 
@@ -70,32 +78,34 @@ static void ph_temp_sensor_task(void *pvParameters) {
     int32_t temp_filtered = 0;
     float current_temp = 25.0f;
     bool temp_valid = true;
+    bool temp_read_ok = true;
 
     if (g_temp_mode == TEMP_MODE_MTC_C || g_temp_mode == TEMP_MODE_MTC_F) {
         current_temp = g_manual_temp;
         temp_valid = true;
     } else {
-        bool temp_read_ok = read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN, &temp_raw);
+        temp_read_ok = read_cs1237_raw(TEMP_SCLK_PIN, TEMP_DATA_PIN, &temp_raw);
         if (!temp_read_ok) {
             temp_valid = false;
             current_temp = 25.0f; // Bù nhiệt mặc định 25C cho thuật toán pH nếu đo bị lỗi
         } else {
             bool temp_step_detected = false;
             int32_t temp_spiked = apply_spike_filter(&temp_spike_filter, temp_raw, &temp_step_detected);
-            if (temp_step_detected) {
-                reset_median_filter_val(&temp_median_filter, temp_spiked);
-                reset_moving_average_val(&temp_filter, temp_spiked);
-                ESP_LOGI(TAG, "Phat hien buoc nhay nhiet do thuc te! Flush buffer voi ADC raw=%" PRId32, temp_spiked);
-            }
             temp_med = apply_median_filter(&temp_median_filter, temp_spiked);
             temp_filtered = apply_moving_average(&temp_filter, temp_med);
             float measured_temp = calculate_temperature(temp_filtered, true) + g_temp_offset; // true = PT1000
+            if (temp_step_detected) {
+                reset_median_filter_val(&temp_median_filter, temp_spiked);
+                reset_moving_average_val(&temp_filter, temp_spiked);
+                ewma_reset(&temp_ewma_filter, measured_temp);
+                ESP_LOGI(TAG, "Phat hien buoc nhay nhiet do thuc te! Flush buffer voi ADC raw=%" PRId32, temp_spiked);
+            }
             if (measured_temp < 0.0f || measured_temp > 60.0f) {
                 temp_valid = false;
                 current_temp = 25.0f; // Bù nhiệt mặc định 25C cho thuật toán pH nếu đo bị lỗi
             } else {
                 temp_valid = true;
-                current_temp = measured_temp;
+                current_temp = ewma_update(&temp_ewma_filter, measured_temp);
             }
         }
     }
@@ -115,15 +125,38 @@ static void ph_temp_sensor_task(void *pvParameters) {
     } else {
         bool ph_step_detected = false;
         int32_t ph_spiked = apply_spike_filter(&ph_spike_filter, ph_raw, &ph_step_detected);
+        ph_med = apply_median_filter(&ph_median_filter, ph_spiked);
+        ph_filtered = apply_moving_average(&ph_filter, ph_med);
+        float calculated_ph = calculate_ph_with_atc_calibrated(
+            &ph_cal, ph_filtered, current_temp, &v_probe_mv, &ph_valid);
         if (ph_step_detected) {
             reset_median_filter_val(&ph_median_filter, ph_spiked);
             reset_moving_average_val(&ph_filter, ph_spiked);
+            kalman1d_reset(&ph_kalman_filter, calculated_ph);
             ESP_LOGI(TAG, "Phat hien buoc nhay pH thuc te! Flush buffer voi ADC raw=%" PRId32, ph_spiked);
         }
-        ph_med = apply_median_filter(&ph_median_filter, ph_spiked);
-        ph_filtered = apply_moving_average(&ph_filter, ph_med);
-        current_ph = calculate_ph_with_atc_calibrated(
-            &ph_cal, ph_filtered, current_temp, &v_probe_mv, &ph_valid);
+        if (ph_valid) {
+            current_ph = kalman1d_update(&ph_kalman_filter, calculated_ph);
+        } else {
+            current_ph = calculated_ph;
+        }
+    }
+
+    // --- CƠ CHẾ TỰ PHỤC HỒI CS1237 (HARDWARE WATCHDOG) ---
+    static uint32_t s_cs1237_fail_count = 0;
+    bool cs1237_both_ok = (g_temp_mode == TEMP_MODE_MTC_C || g_temp_mode == TEMP_MODE_MTC_F) ? ph_read_ok : (temp_read_ok && ph_read_ok);
+    if (!cs1237_both_ok) {
+        s_cs1237_fail_count++;
+        if (s_cs1237_fail_count >= 10) {
+            ESP_LOGW(TAG, "CS1237 mat ket noi / ket giao tiep lien tiep %lu lan -> Tien hanh khoi tao lai GPIO va ghi lai thanh ghi cau hinh CS1237...", (unsigned long)s_cs1237_fail_count);
+            init_system_gpios();
+            vTaskDelay(pdMS_TO_TICKS(20));
+            write_cs1237_config(PH_SCLK_PIN, PH_DATA_PIN, CS1237_CFG_40HZ_PGA1_CHA);
+            write_cs1237_config(TEMP_SCLK_PIN, TEMP_DATA_PIN, CS1237_CFG_40HZ_PGA1_CHA);
+            s_cs1237_fail_count = 0;
+        }
+    } else {
+        s_cs1237_fail_count = 0;
     }
 
     // Tính v_diff cho cả raw, med và filtered (đổi ra mV)
@@ -136,7 +169,7 @@ static void ph_temp_sensor_task(void *pvParameters) {
     // CODE MÔ PHỎNG SENSOR (TỰ ĐỘNG THAY ĐỔI 5 GIÁ TRỊ BAO GỒM CẢ CÁC GIÁ TRỊ LỖI)
     // Để chuyển sang chạy thực tế: Đổi '#if 1' bên dưới thành '#if 0' hoặc comment lại toàn bộ khối này
     // =========================================================================
-#if 0
+#if 1
     /* Chuỗi mô phỏng 5 bước: 
      * Bước 0: pH=7.00 (OK), Temp=28.5C (OK)
      * Bước 1: pH=-1.50 (LỖI -> N/A), Temp=-15.0C (LỖI -> N/A)
@@ -144,8 +177,9 @@ static void ph_temp_sensor_task(void *pvParameters) {
      * Bước 3: pH=15.20 (LỖI -> N/A), Temp=85.0C (LỖI -> N/A)
      * Bước 4: pH=3.45 (OK), Temp=25.3C (OK)
      */
-    static const float s_sim_ph[5]   = { 7.00f, -1.50f,  6.86f, 15.20f,  3.45f };
-    static const float s_sim_temp[5] = {28.50f, -15.00f, 32.00f, 85.00f, 25.30f };
+    static const float s_sim_ph[5]   = { 7.50f,  6.20f,  8.10f,  9.40f,  7.80f };
+    static const float s_sim_temp[5] = {29.50f, 25.00f, 30.20f, 38.50f, 28.80f };
+
     static size_t s_sim_idx = 0;
 
     current_ph = s_sim_ph[s_sim_idx];

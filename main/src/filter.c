@@ -264,3 +264,102 @@ int32_t apply_spike_filter(SpikeFilter_t *filter, int32_t new_val, bool *out_ste
 
     return result;
 }
+
+EwmaFilter_t temp_ewma_filter = {0};
+Kalman1D_t ph_kalman_filter = {0};
+Kalman1D_t do_kalman_filter = {0};
+
+void ewma_init(EwmaFilter_t *filter, float initial_val, float alpha) {
+    if (filter->mutex == NULL) {
+        filter->mutex = xSemaphoreCreateMutex();
+    }
+    if (filter->mutex != NULL) {
+        xSemaphoreTake(filter->mutex, portMAX_DELAY);
+    }
+    filter->last_val = initial_val;
+    filter->alpha = alpha;
+    filter->is_initialized = true;
+    if (filter->mutex != NULL) {
+        xSemaphoreGive(filter->mutex);
+    }
+}
+
+float ewma_update(EwmaFilter_t *filter, float input) {
+    float output = input;
+    if (filter->mutex != NULL) {
+        xSemaphoreTake(filter->mutex, portMAX_DELAY);
+    }
+    if (!filter->is_initialized) {
+        filter->last_val = input;
+        filter->is_initialized = true;
+    }
+    output = filter->alpha * input + (1.0f - filter->alpha) * filter->last_val;
+    filter->last_val = output;
+
+    if (filter->mutex != NULL) {
+        xSemaphoreGive(filter->mutex);
+    }
+    return output;
+}
+
+void ewma_reset(EwmaFilter_t *filter, float reset_val) {
+    if (filter->mutex != NULL) {
+        xSemaphoreTake(filter->mutex, portMAX_DELAY);
+    }
+    filter->last_val = reset_val;
+    filter->is_initialized = true;
+    if (filter->mutex != NULL) {
+        xSemaphoreGive(filter->mutex);
+    }
+}
+
+void kalman1d_init(Kalman1D_t *k, float initial_val, float Q, float R) {
+    if (k->mutex == NULL) {
+        k->mutex = xSemaphoreCreateMutex();
+    }
+    if (k->mutex != NULL) {
+        xSemaphoreTake(k->mutex, portMAX_DELAY);
+    }
+    k->x = initial_val;
+    k->P = 1.0f;
+    k->Q = Q;
+    k->R = R;
+    k->is_initialized = true;
+    if (k->mutex != NULL) {
+        xSemaphoreGive(k->mutex);
+    }
+}
+
+float kalman1d_update(Kalman1D_t *k, float measurement) {
+    float result = measurement;
+    if (k->mutex != NULL) {
+        xSemaphoreTake(k->mutex, portMAX_DELAY);
+    }
+    if (!k->is_initialized) {
+        k->x = measurement;
+        k->P = 1.0f;
+        k->is_initialized = true;
+    }
+    k->P = k->P + k->Q;
+    float K = k->P / (k->P + k->R);
+    k->x = k->x + K * (measurement - k->x);
+    k->P = (1.0f - K) * k->P;
+    result = k->x;
+
+    if (k->mutex != NULL) {
+        xSemaphoreGive(k->mutex);
+    }
+    return result;
+}
+
+void kalman1d_reset(Kalman1D_t *k, float reset_val) {
+    if (k->mutex != NULL) {
+        xSemaphoreTake(k->mutex, portMAX_DELAY);
+    }
+    k->x = reset_val;
+    k->P = 1.0f;
+    k->is_initialized = true;
+    if (k->mutex != NULL) {
+        xSemaphoreGive(k->mutex);
+    }
+}

@@ -91,6 +91,7 @@ float calculate_temperature(int32_t raw_adc, bool is_pt1000);
 float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, float temp_c, float *out_v_probe_mv, bool *out_ph_valid);
 
 // --- Các API Toàn cục mới phục vụ Web Server & Azure ---
+void ph_temp_init(void);
 PH_Temp_Sensor_Status_t Get_Sensor_Status(void);
 void Update_Sensor_Measurements(float ph, bool ph_valid, float temp, bool temp_valid, float v_probe_mv);
 void Update_DO_Sensor_Measurements(float do_mg_l, float do_temp_c, float do_saturation_pct, bool do_valid, int do_error_code);

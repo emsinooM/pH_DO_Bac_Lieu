@@ -200,10 +200,14 @@ float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, fl
 
 static SemaphoreHandle_t s_sensor_status_mutex = NULL;
 
-static void init_sensor_status_mutex_if_needed(void) {
+void ph_temp_init(void) {
     if (s_sensor_status_mutex == NULL) {
         s_sensor_status_mutex = xSemaphoreCreateMutex();
     }
+}
+
+static void init_sensor_status_mutex_if_needed(void) {
+    ph_temp_init();
 }
 
 PH_Temp_Sensor_Status_t Get_Sensor_Status(void) {
@@ -324,6 +328,7 @@ bool Save_Temp_Settings_To_Storage(void) {
 }
 
 bool Load_Calibration_From_Storage(void) {
+    ph_temp_init();
     Load_Temp_Settings_From_Storage();
     nvs_handle_t handle;
     esp_err_t err = nvs_open("sys_cfg", NVS_READONLY, &handle);
