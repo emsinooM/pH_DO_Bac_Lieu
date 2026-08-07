@@ -428,6 +428,23 @@ static void prvHandleCommand(AzureIoTHubClientCommandRequest_t *pxMessage,
             cJSON_AddStringToObject(sensor_data, "ver", VERSION);
             cJSON_AddStringToObject(sensor_data, "ota_part", part_label);
 
+            cJSON *ph_calib = cJSON_CreateObject();
+            if (ph_calib != NULL)
+            {
+                cJSON_AddBoolToObject(ph_calib, "is_calibrated", ph_cal.is_calibrated);
+                cJSON_AddNumberToObject(ph_calib, "cal_type", ph_cal.cal_type);
+                cJSON_AddNumberToObject(ph_calib, "ph7_mv", ph_cal.ph7_voltage_mv);
+                cJSON_AddNumberToObject(ph_calib, "ph7_temp", ph_cal.ph7_temp_c);
+                cJSON_AddNumberToObject(ph_calib, "ph4_mv", ph_cal.ph4_voltage_mv);
+                cJSON_AddNumberToObject(ph_calib, "ph4_temp", ph_cal.ph4_temp_c);
+                cJSON_AddNumberToObject(ph_calib, "ph10_mv", ph_cal.ph10_voltage_mv);
+                cJSON_AddNumberToObject(ph_calib, "ph10_temp", ph_cal.ph10_temp_c);
+                cJSON_AddNumberToObject(ph_calib, "slope_norm", ph_cal.slope_norm);
+                cJSON_AddNumberToObject(ph_calib, "slope_high", ph_cal.slope_high);
+                cJSON_AddNumberToObject(ph_calib, "u7", ph_cal.u7);
+                cJSON_AddItemToObject(sensor_data, "ph_calib", ph_calib);
+            }
+
             cJSON_AddItemToObject(pl, "SensorData", sensor_data);
             cJSON_AddItemToObject(res, "payload", pl);
         }
@@ -775,51 +792,9 @@ void User_Azure_Task(void)
  * ================================================================ */
 void User_Azure_Cleanup_For_OTA(void)
 {
-    ESP_LOGW("AZURE", "OTA cleanup: deleting sub-tasks to free heap...");
-
-    /* 1. Delete Process Loop task (2×4096 = 8 KB stack) */
-    if (Azure_Process_Handle != NULL) {
-        vTaskDelete(Azure_Process_Handle);
-        Azure_Process_Handle = NULL;
-        IoTHubHandle.isProcessLoopInitialized = false;
-        ESP_LOGI("AZURE", "  Deleted Process Loop task");
-    }
-
-    /* 2. Delete Transmit task (3×4096 = 12 KB stack) */
-    if (Azure_Transmit_Handle != NULL) {
-        vTaskDelete(Azure_Transmit_Handle);
-        Azure_Transmit_Handle = NULL;
-        IoTHubHandle.isTransmitInitialized = false;
-        ESP_LOGI("AZURE", "  Deleted Transmit task");
-    }
-
-    /* 3. Delete Telemetry task (3×4096 = 12 KB stack) */
-    if (Azure_Telemetry_Handle != NULL) {
-        vTaskDelete(Azure_Telemetry_Handle);
-        Azure_Telemetry_Handle = NULL;
-        IoTHubHandle.isTelemetryInitialized = false;
-        ESP_LOGI("AZURE", "  Deleted Telemetry task");
-    }
-
-    /* 4. Delete telemetry queue to reclaim its buffer */
-    if (xQueueTelemetry != NULL) {
-        vQueueDelete(xQueueTelemetry);
-        xQueueTelemetry = NULL;
-        ESP_LOGI("AZURE", "  Deleted Telemetry queue");
-    }
-
-    /* 5. Delete DO sensor task to reclaim stack & UART memory */
-    if (do_sensor_is_running()) {
-        ESP_LOGI("AZURE", "  Stopping DO sensor task for OTA...");
-        do_sensor_stop();
-    }
-
-    /* Give FreeRTOS time to reclaim the memory */
-    vTaskDelay(pdMS_TO_TICKS(200));
-
-    ESP_LOGW("AZURE", "OTA cleanup done. Free heap: %lu bytes",
-             (unsigned long)esp_get_free_heap_size());
+    ESP_LOGI("AZURE", "Reboot-to-OTA model active. Memory cleanup is handled by esp_restart().");
 }
+
 
 static void Azure_Process_Loop_Task(void *pvParameters)
 {
@@ -1952,7 +1927,7 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
             const esp_partition_t *running_part = esp_ota_get_running_partition();
             const char *part_label = (running_part != NULL) ? running_part->label : "Unknown";
 
-            char tele_str[768];
+            char tele_str[1024];
             int len = snprintf(tele_str, sizeof(tele_str),
                 "{\"payload\":{"
                 "\"HostName\":\"%s\","
@@ -1974,7 +1949,20 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
                     "\"v_probe_mv\":%.2f,"
                     "\"do_err\":%d,"
                     "\"ver\":\"%s\","
-                    "\"ota_part\":\"%s\""
+                    "\"ota_part\":\"%s\","
+                    "\"ph_calib\":{"
+                        "\"is_calibrated\":%s,"
+                        "\"cal_type\":%d,"
+                        "\"ph7_mv\":%.2f,"
+                        "\"ph7_temp\":%.2f,"
+                        "\"ph4_mv\":%.2f,"
+                        "\"ph4_temp\":%.2f,"
+                        "\"ph10_mv\":%.2f,"
+                        "\"ph10_temp\":%.2f,"
+                        "\"slope_norm\":%.3f,"
+                        "\"slope_high\":%.3f,"
+                        "\"u7\":%.4f"
+                    "}"
                 "}"                        
             "}}",
                 IoTHubHandle.hostName,
@@ -1994,7 +1982,18 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
                 (double)status.v_probe_mv,
                 status.do_error_code,
                 VERSION,
-                part_label
+                part_label,
+                ph_cal.is_calibrated ? "true" : "false",
+                ph_cal.cal_type,
+                (double)ph_cal.ph7_voltage_mv,
+                (double)ph_cal.ph7_temp_c,
+                (double)ph_cal.ph4_voltage_mv,
+                (double)ph_cal.ph4_temp_c,
+                (double)ph_cal.ph10_voltage_mv,
+                (double)ph_cal.ph10_temp_c,
+                (double)ph_cal.slope_norm,
+                (double)ph_cal.slope_high,
+                (double)ph_cal.u7
             );
 
             if (len > 0 && len < sizeof(tele_str))

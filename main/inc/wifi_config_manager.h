@@ -26,6 +26,20 @@ void wifi_config_manager_schedule_connect(void);
 void wifi_config_manager_prepare_scan(void);
 void wifi_config_manager_finish_scan(void);
 
+#include "esp_wifi_types.h"
+
+typedef enum {
+    WIFI_SCAN_STATE_IDLE = 0,
+    WIFI_SCAN_STATE_SCANNING,
+    WIFI_SCAN_STATE_DONE,
+    WIFI_SCAN_STATE_FAILED
+} wifi_scan_state_t;
+
+void wifi_config_manager_trigger_scan(void);
+wifi_scan_state_t wifi_config_manager_get_scan_state(void);
+uint16_t wifi_config_manager_get_scan_results(wifi_ap_record_t *out_records, uint16_t max_records);
+
+
 
 /* --- Shared Secret Authentication --- */
 #define AUTH_SECRET_DEFAULT  "SecretKey"

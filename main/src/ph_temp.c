@@ -47,25 +47,56 @@ void update_ph_calibration(PhCalibration_t *cal) {
         
         float mid_target = (cal->ph10_target < 9.5f) ? 6.86f : 7.00f;
         
-        bool low_ok = fabsf(cal->u7 - u4) > 0.1f;
-        bool high_ok = fabsf(cal->u7 - u10) > 0.1f;
+        float du_low = fabsf(cal->u7 - u4);
+        float du_high = fabsf(cal->u7 - u10);
+
+        bool low_ok = du_low > 0.1f;
+        bool high_ok = du_high > 0.1f;
         
         if (low_ok && high_ok) {
             cal->slope_norm = (mid_target - 4.00f) / (cal->u7 - u4);
             cal->slope_high = (cal->ph10_target - mid_target) / (u10 - cal->u7);
-            cal->is_calibrated = true;
-            ESP_LOGI(TAG, "Hiệu chuẩn 3 điểm thành công! Slope_low: %.4f, Slope_high: %.4f, U7: %.4f",
-                     cal->slope_norm, cal->slope_high, cal->u7);
+
+            // Tính độ nhạy quy đổi về mV/pH ở 25°C (298.15K)
+            float sens_low = (du_low * 298.15f) / fabsf(mid_target - 4.00f);
+            float sens_high = (du_high * 298.15f) / fabsf(cal->ph10_target - mid_target);
+
+            float eff_low = (sens_low / 59.16f) * 100.0f;
+            float eff_high = (sens_high / 59.16f) * 100.0f;
+
+            bool low_slope_ok = (sens_low >= 41.41f && sens_low <= 68.03f);
+            bool high_slope_ok = (sens_high >= 41.41f && sens_high <= 68.03f);
+
+            if (low_slope_ok && high_slope_ok) {
+                cal->is_calibrated = true;
+                ESP_LOGI(TAG, "Hiệu chuẩn 3 điểm thành công! Sens_low: %.2f mV/pH (%.1f%%), Sens_high: %.2f mV/pH (%.1f%%), U7: %.4f",
+                         sens_low, eff_low, sens_high, eff_high, cal->u7);
+            } else {
+                cal->is_calibrated = false;
+                ESP_LOGE(TAG, "Lỗi hiệu chuẩn 3 điểm: Độ dốc Slope ngoài dải 70%%-115%%! Sens_low: %.2f mV/pH (%.1f%%), Sens_high: %.2f mV/pH (%.1f%%)",
+                         sens_low, eff_low, sens_high, eff_high);
+            }
         } else {
             cal->is_calibrated = false;
             ESP_LOGE(TAG, "Lỗi hiệu chuẩn 3 điểm: Điện áp các dung dịch quá gần nhau!");
         }
     } else { // 2-point
-        if (fabsf(cal->u7 - u4) > 0.1f) {
+        float du_low = fabsf(cal->u7 - u4);
+        if (du_low > 0.1f) {
             cal->slope_norm = (7.00f - 4.00f) / (cal->u7 - u4);
             cal->slope_high = cal->slope_norm;
-            cal->is_calibrated = true;
-            ESP_LOGI(TAG, "Hiệu chuẩn 2 điểm thành công! Slope_norm: %.4f, U7: %.4f", cal->slope_norm, cal->u7);
+
+            // Tính độ nhạy quy đổi về mV/pH ở 25°C (298.15K)
+            float sens_low = (du_low * 298.15f) / 3.00f;
+            float eff_low = (sens_low / 59.16f) * 100.0f;
+
+            if (sens_low >= 41.41f && sens_low <= 68.03f) {
+                cal->is_calibrated = true;
+                ESP_LOGI(TAG, "Hiệu chuẩn 2 điểm thành công! Sens: %.2f mV/pH (Hiệu suất: %.1f%%), U7: %.4f", sens_low, eff_low, cal->u7);
+            } else {
+                cal->is_calibrated = false;
+                ESP_LOGE(TAG, "Lỗi hiệu chuẩn 2 điểm: Độ dốc Slope ngoài dải 70%%-115%%! Sens: %.2f mV/pH (Hiệu suất: %.1f%%)", sens_low, eff_low);
+            }
         } else {
             cal->is_calibrated = false;
             ESP_LOGE(TAG, "Lỗi hiệu chuẩn 2 điểm: Điện áp các dung dịch quá gần nhau!");
@@ -104,7 +135,7 @@ float calculate_temperature(int32_t raw_adc, bool is_pt1000) {
     }
 }
 
-float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, float temp_c, float *out_v_probe_mv) {
+float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, float temp_c, float *out_v_probe_mv, bool *out_ph_valid) {
     float v_diff = ((float)raw_adc * V_REF_ADC) / ADC_DIVISOR;
     float v_probe =  v_diff * 2.0f; // Giải mã điện áp đầu dò thực tế (Khử offset và bù hệ số suy hao 0.5 của Op-Amp)
 
@@ -152,6 +183,12 @@ float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, fl
         ph_val = ph_val / denom;
     }
 
+    // Kiểm tra tính hợp lệ của pH (phải từ 0.0 đến 14.0) trước khi clamp
+    bool ph_is_valid = (ph_val >= 0.0f && ph_val <= 14.0f);
+    if (out_ph_valid) {
+        *out_ph_valid = ph_is_valid;
+    }
+
     // Giới hạn dải đo bảo vệ hiển thị ngoài thực tế
     if (ph_val < 0.0f) ph_val = 0.0f;
     if (ph_val > 14.0f) ph_val = 14.0f;
@@ -163,10 +200,14 @@ float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, fl
 
 static SemaphoreHandle_t s_sensor_status_mutex = NULL;
 
-static void init_sensor_status_mutex_if_needed(void) {
+void ph_temp_init(void) {
     if (s_sensor_status_mutex == NULL) {
         s_sensor_status_mutex = xSemaphoreCreateMutex();
     }
+}
+
+static void init_sensor_status_mutex_if_needed(void) {
+    ph_temp_init();
 }
 
 PH_Temp_Sensor_Status_t Get_Sensor_Status(void) {
@@ -181,11 +222,13 @@ PH_Temp_Sensor_Status_t Get_Sensor_Status(void) {
     return status;
 }
 
-void Update_Sensor_Measurements(float ph, float temp, float v_probe_mv) {
+void Update_Sensor_Measurements(float ph, bool ph_valid, float temp, bool temp_valid, float v_probe_mv) {
     init_sensor_status_mutex_if_needed();
     if (xSemaphoreTake(s_sensor_status_mutex, portMAX_DELAY) == pdTRUE) {
         s_sensor_status.ph = ph;
+        s_sensor_status.ph_valid = ph_valid;
         s_sensor_status.temperature = temp;
+        s_sensor_status.temp_valid = temp_valid;
         s_sensor_status.v_probe_mv = v_probe_mv;
         
         // Đồng bộ các tham số hiệu chuẩn hiện tại
@@ -285,6 +328,7 @@ bool Save_Temp_Settings_To_Storage(void) {
 }
 
 bool Load_Calibration_From_Storage(void) {
+    ph_temp_init();
     Load_Temp_Settings_From_Storage();
     nvs_handle_t handle;
     esp_err_t err = nvs_open("sys_cfg", NVS_READONLY, &handle);
@@ -300,7 +344,7 @@ bool Load_Calibration_From_Storage(void) {
         ph_cal.cal_type = 2;
         update_ph_calibration(&ph_cal);
         ph_cal.is_calibrated = false;
-        Update_Sensor_Measurements(7.0f, 25.0f, 0.0f);
+        Update_Sensor_Measurements(7.0f, true, 25.0f, true, 0.0f);
         return false;
     }
 
@@ -320,13 +364,13 @@ bool Load_Calibration_From_Storage(void) {
         ph_cal.cal_type = 2;
         update_ph_calibration(&ph_cal);
         ph_cal.is_calibrated = false;
-        Update_Sensor_Measurements(7.0f, 25.0f, 0.0f);
+        Update_Sensor_Measurements(7.0f, true, 25.0f, true, 0.0f);
         return false;
     }
 
     ESP_LOGI(TAG, "Đã tải cấu hình hiệu chuẩn thành công từ NVS: is_calibrated=%d, pH7_mV=%.2f, pH4_mV=%.2f",
              ph_cal.is_calibrated, ph_cal.ph7_voltage_mv, ph_cal.ph4_voltage_mv);
-    Update_Sensor_Measurements(7.0f, 25.0f, 0.0f);
+    Update_Sensor_Measurements(7.0f, true, 25.0f, true, 0.0f);
     return true;
 }
 
@@ -338,12 +382,24 @@ bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_
     temp_cal.cal_type = cal_type;
     
     if (fabsf(target_ph - 4.00f) < 0.1f) {
+        if (current_v_mv < 120.0f || current_v_mv > 240.0f) {
+            ESP_LOGE(TAG, "Hiệu chuẩn pH 4.00 thất bại: Điện áp %.2f mV ngoài dải hợp lệ [+120mV, +240mV]!", current_v_mv);
+            return false;
+        }
         temp_cal.ph4_voltage_mv = current_v_mv;
         temp_cal.ph4_temp_c = current_temp_c;
     } else if (fabsf(target_ph - 7.00f) < 0.1f || fabsf(target_ph - 6.86f) < 0.1f) {
+        if (current_v_mv < -60.0f || current_v_mv > 60.0f) {
+            ESP_LOGE(TAG, "Hiệu chuẩn pH %.2f thất bại: Điện áp %.2f mV ngoài dải hợp lệ [-60mV, +60mV]!", target_ph, current_v_mv);
+            return false;
+        }
         temp_cal.ph7_voltage_mv = current_v_mv;
         temp_cal.ph7_temp_c = current_temp_c;
     } else if (fabsf(target_ph - 9.18f) < 0.1f || fabsf(target_ph - 10.00f) < 0.1f) {
+        if (current_v_mv < -240.0f || current_v_mv > -100.0f) {
+            ESP_LOGE(TAG, "Hiệu chuẩn pH %.2f thất bại: Điện áp %.2f mV ngoài dải hợp lệ [-240mV, -100mV]!", target_ph, current_v_mv);
+            return false;
+        }
         temp_cal.ph10_voltage_mv = current_v_mv;
         temp_cal.ph10_temp_c = current_temp_c;
         temp_cal.ph10_target = target_ph;
@@ -353,11 +409,15 @@ bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_
     }
     
     update_ph_calibration(&temp_cal);
+
+    if (!temp_cal.is_calibrated) {
+        ESP_LOGE(TAG, "Hiệu chuẩn pH thất bại: Độ dốc Slope không đạt yêu cầu sức khỏe điện cực (80%% - 110%%)!");
+        return false;
+    }
     
-    // Luôn lưu điểm hiệu chuẩn để người dùng không mất mốc trung gian
     ph_cal = temp_cal;
     Save_Calibration_To_Storage(&ph_cal);
-    Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.temperature, s_sensor_status.v_probe_mv);
+    Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.ph_valid, s_sensor_status.temperature, s_sensor_status.temp_valid, s_sensor_status.v_probe_mv);
     return true;
 }
 
@@ -378,6 +438,36 @@ bool Reset_PH_Calibration(void) {
     ph_cal.is_calibrated = false; // Buộc trạng thái về chưa hiệu chuẩn thực tế
     
     bool ok = Save_Calibration_To_Storage(&ph_cal);
-    Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.temperature, s_sensor_status.v_probe_mv);
+    Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.ph_valid, s_sensor_status.temperature, s_sensor_status.temp_valid, s_sensor_status.v_probe_mv);
     return ok;
 }
+
+PhSensorHealth_t Get_PH_Sensor_Health(void) {
+    PhSensorHealth_t health;
+    memset(&health, 0, sizeof(health));
+
+    health.is_calibrated = ph_cal.is_calibrated;
+    health.zero_offset_mv = ph_cal.ph7_voltage_mv;
+
+    float t7_k = ph_cal.ph7_temp_c + 273.15f;
+    float t4_k = ph_cal.ph4_temp_c + 273.15f;
+    float u7 = ph_cal.ph7_voltage_mv / t7_k;
+    float u4 = ph_cal.ph4_voltage_mv / t4_k;
+    float du_low = fabsf(u7 - u4);
+
+    health.sens_mv_per_ph = (du_low * 298.15f) / 3.00f; // mV/pH ở 25°C
+    health.slope_pct = (health.sens_mv_per_ph / 59.16f) * 100.0f;
+
+    // Điện cực được coi là khỏe (Healthy) khi:
+    // 1. Hệ thống đã hiệu chuẩn thành công
+    // 2. Độ nhạy Slope >= 80.0%
+    // 3. Điểm lệch 0 (Zero Offset) trong khoảng [-30.0mV, +30.0mV]
+    if (health.is_calibrated && health.slope_pct >= 80.0f && fabsf(health.zero_offset_mv) <= 30.0f) {
+        health.is_healthy = true;
+    } else {
+        health.is_healthy = false;
+    }
+
+    return health;
+}
+

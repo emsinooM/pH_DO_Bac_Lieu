@@ -97,4 +97,15 @@ bool Save_Calibration_To_Storage(const PhCalibration_t *cal);
 bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_c, uint8_t cal_type);
 bool Reset_PH_Calibration(void);
 
+// --- Cấu trúc chẩn đoán Sức khỏe Cảm biến pH ---
+typedef struct {
+    float slope_pct;       // Độ nhạy chuẩn hóa % so với Nernst (ví dụ 97.5%)
+    float zero_offset_mv;  // Điểm lệch 0 tại pH 7.00 (mV) (ví dụ -12.0 mV)
+    float sens_mv_per_ph;  // Độ dốc tính bằng mV/pH ở 25C (ví dụ 57.68 mV/pH)
+    bool  is_calibrated;   // Trạng thái đã hiệu chuẩn thực tế hay chưa
+    bool  is_healthy;      // true nếu Slope >= 80% và |Zero| <= 30mV
+} PhSensorHealth_t;
+
+PhSensorHealth_t Get_PH_Sensor_Health(void);
+
 #endif // PH_TEMP_H

@@ -20,12 +20,23 @@
 #include "ph_temp.h"
 #include "do_sensor.h"
 #include "ds3231.h"
+#include "user_fram.h"
+#include "wifi_config_manager.h"
+#include "esp_netif.h"
+#include "user_system.h"
+
+
 
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
+#include "esp_ota_ops.h"
+#include "esp_wifi.h"
+#include "user_azure.h"
+#include "user_ota.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -71,27 +82,80 @@ static const page_def_t s_pages_en[PAGE_COUNT] = {
     /* ── Main Menu ── */
     [PAGE_MAIN_MENU] = {
         .title      = "Main Menu",
-        .item_count = 4,
+        .item_count = 7,
         .items      = { "1 System Settings",
                         "2 Display Settings",
                         "3 Modbus Settings",
-                        "4 Sensor Settings" },
+                        "4 Sensor Settings",
+                        "5 History Log",
+                        "6 WiFi Settings",
+                        "7 Device Info" },
         .children   = { PAGE_SYSTEM_SETTINGS,
                         PAGE_DISPLAY_MODE,
                         PAGE_MODBUS_SETTINGS,
-                        PAGE_SENSOR_SETTINGS },
+                        PAGE_SENSOR_SETTINGS,
+                        PAGE_HISTORY_LOG,
+                        PAGE_WIFI_SETTINGS,
+                        PAGE_DEVICE_INFO },
         .parent     = PAGE_MEASUREMENT,
     },
+
+    [PAGE_DEVICE_INFO] = {
+        .title      = "Device Info",
+        .item_count = 0,
+        .parent     = PAGE_MAIN_MENU,
+    },
+
+    [PAGE_HISTORY_LOG] = {
+        .title      = "History Log",
+        .item_count = 0,
+        .parent     = PAGE_MAIN_MENU,
+    },
+
+    [PAGE_WIFI_SETTINGS] = {
+        .title      = "WiFi Settings",
+        .item_count = 2,
+        .items      = { "6.1 Scan & Connect",
+                        "6.2 WiFi Status" },
+        .children   = { PAGE_WIFI_SCAN_LIST, PAGE_WIFI_STATUS },
+        .parent     = PAGE_MAIN_MENU,
+    },
+
+    [PAGE_WIFI_SCAN_LIST] = {
+        .title      = "WiFi Networks",
+        .item_count = 0,
+        .parent     = PAGE_WIFI_SETTINGS,
+    },
+
+    [PAGE_WIFI_PASS_ENTRY] = {
+        .title      = "Enter Password",
+        .item_count = 0,
+        .parent     = PAGE_WIFI_SCAN_LIST,
+    },
+
+    [PAGE_WIFI_STATUS] = {
+        .title      = "WiFi Status",
+        .item_count = 0,
+        .parent     = PAGE_WIFI_SETTINGS,
+    },
+
 
     /* ── System Settings ── */
     [PAGE_SYSTEM_SETTINGS] = {
         .title      = "System Settings",
-        .item_count = 3,
+        .item_count = 4,
         .items      = { "1.1 Language",
                         "1.2 Date",
-                        "1.3 Screen Settings" },
-        .children   = { PAGE_LANGUAGE, PAGE_DATE, PAGE_SCREEN_SETTINGS },
+                        "1.3 Screen Settings",
+                        "1.4 Change Password" },
+        .children   = { PAGE_LANGUAGE, PAGE_DATE, PAGE_SCREEN_SETTINGS, PAGE_CHANGE_PIN },
         .parent     = PAGE_MAIN_MENU,
+    },
+
+    [PAGE_CHANGE_PIN] = {
+        .title      = "Change Password",
+        .item_count = 0,
+        .parent     = PAGE_SYSTEM_SETTINGS,
     },
 
     [PAGE_SCREEN_SETTINGS] = {
@@ -167,18 +231,26 @@ static const page_def_t s_pages_en[PAGE_COUNT] = {
 
     [PAGE_PH_SETTINGS] = {
         .title      = "pH Sensor Settings",
-        .item_count = 5,
+        .item_count = 6,
         .items      = { "4.1.1 Calibration",
-                        "4.1.2 Digital Filter",
-                        "4.1.3 Temp Mode",
-                        "4.1.4 Temp Settings",
-                        "4.1.5 Linear Comp" },
+                        "4.1.2 Sensor Health",
+                        "4.1.3 Digital Filter",
+                        "4.1.4 Temp Mode",
+                        "4.1.5 Temp Settings",
+                        "4.1.6 Linear Comp" },
         .children   = { PAGE_CALIBRATION,
+                        PAGE_PH_HEALTH,
                         PAGE_DIGITAL_FILTER,
                         PAGE_TEMP_MODE,
                         PAGE_TEMP_SETTINGS,
                         PAGE_TEMP_LIN_COMP },
         .parent     = PAGE_SENSOR_SETTINGS,
+    },
+
+    [PAGE_PH_HEALTH] = {
+        .title      = "pH Sensor Health",
+        .item_count = 0,
+        .parent     = PAGE_PH_SETTINGS,
     },
 
     [PAGE_DO_SETTINGS] = {
@@ -377,6 +449,12 @@ static const page_def_t s_pages_en[PAGE_COUNT] = {
         .parent     = PAGE_CALIBRATION,
     },
 
+    [PAGE_CONFIRM_RESET] = {
+        .title      = "Confirm Reset",
+        .item_count = 0,
+        .parent     = PAGE_CALIBRATION,
+    },
+
     [PAGE_MODBUS_EDIT_ADDR] = {
         .title      = "Modbus Address",
         .item_count = 0,
@@ -389,27 +467,80 @@ static const page_def_t s_pages_vi[PAGE_COUNT] = {
     /* ── Main Menu ── */
     [PAGE_MAIN_MENU] = {
         .title      = "Menu Chinh",
-        .item_count = 4,
+        .item_count = 7,
         .items      = { "1 Cai Dat He Thong",
                         "2 Cai Dat Hien Thi",
                         "3 Cai Dat Modbus",
-                        "4 Cai Dat Cam Bien" },
+                        "4 Cai Dat Cam Bien",
+                        "5 Xem Lai Lich Su",
+                        "6 Cai Dat WiFi",
+                        "7 Thong Tin Thiet Bi" },
         .children   = { PAGE_SYSTEM_SETTINGS,
                         PAGE_DISPLAY_MODE,
                         PAGE_MODBUS_SETTINGS,
-                        PAGE_SENSOR_SETTINGS },
+                        PAGE_SENSOR_SETTINGS,
+                        PAGE_HISTORY_LOG,
+                        PAGE_WIFI_SETTINGS,
+                        PAGE_DEVICE_INFO },
         .parent     = PAGE_MEASUREMENT,
     },
+
+    [PAGE_DEVICE_INFO] = {
+        .title      = "Thong Tin Thiet Bi",
+        .item_count = 0,
+        .parent     = PAGE_MAIN_MENU,
+    },
+
+    [PAGE_HISTORY_LOG] = {
+        .title      = "Xem Lai Lich Su",
+        .item_count = 0,
+        .parent     = PAGE_MAIN_MENU,
+    },
+
+    [PAGE_WIFI_SETTINGS] = {
+        .title      = "Cai Dat WiFi",
+        .item_count = 2,
+        .items      = { "6.1 Quet & Ket Noi",
+                        "6.2 Trang Thai WiFi" },
+        .children   = { PAGE_WIFI_SCAN_LIST, PAGE_WIFI_STATUS },
+        .parent     = PAGE_MAIN_MENU,
+    },
+
+    [PAGE_WIFI_SCAN_LIST] = {
+        .title      = "Danh Sach WiFi",
+        .item_count = 0,
+        .parent     = PAGE_WIFI_SETTINGS,
+    },
+
+    [PAGE_WIFI_PASS_ENTRY] = {
+        .title      = "Nhap Mat Khau",
+        .item_count = 0,
+        .parent     = PAGE_WIFI_SCAN_LIST,
+    },
+
+    [PAGE_WIFI_STATUS] = {
+        .title      = "Trang Thai WiFi",
+        .item_count = 0,
+        .parent     = PAGE_WIFI_SETTINGS,
+    },
+
 
     /* ── System Settings ── */
     [PAGE_SYSTEM_SETTINGS] = {
         .title      = "Cai Dat He Thong",
-        .item_count = 3,
+        .item_count = 4,
         .items      = { "1.1 Ngon Ngu",
                         "1.2 Ngay Thang",
-                        "1.3 Cai Dat Man Hinh" },
-        .children   = { PAGE_LANGUAGE, PAGE_DATE, PAGE_SCREEN_SETTINGS },
+                        "1.3 Cai Dat Man Hinh",
+                        "1.4 Thay Doi Mat Khau" },
+        .children   = { PAGE_LANGUAGE, PAGE_DATE, PAGE_SCREEN_SETTINGS, PAGE_CHANGE_PIN },
         .parent     = PAGE_MAIN_MENU,
+    },
+
+    [PAGE_CHANGE_PIN] = {
+        .title      = "Thay Doi Mat Khau",
+        .item_count = 0,
+        .parent     = PAGE_SYSTEM_SETTINGS,
     },
 
     [PAGE_SCREEN_SETTINGS] = {
@@ -476,22 +607,24 @@ static const page_def_t s_pages_vi[PAGE_COUNT] = {
     [PAGE_SENSOR_SETTINGS] = {
         .title      = "Cai Dat Cam Bien",
         .item_count = 2,
-        .items      = { "4.1 Cau Hinh Cam Bien pH",
-                        "4.2 Cau Hinh Cam Bien DO" },
+        .items      = { "4.1 Cam Bien pH",
+                        "4.2 Cam Bien DO" },
         .children   = { PAGE_PH_SETTINGS,
                         PAGE_DO_SETTINGS },
         .parent     = PAGE_MAIN_MENU,
     },
 
     [PAGE_PH_SETTINGS] = {
-        .title      = "Cau Hinh Cam Bien pH",
-        .item_count = 5,
+        .title      = "Cam Bien pH",
+        .item_count = 6,
         .items      = { "4.1.1 Hieu Chuan pH",
-                        "4.1.2 Bo Loc So",
-                        "4.1.3 Che Do Nhiet Do",
-                        "4.1.4 Cai Dat Nhiet Do",
-                        "4.1.5 Bu Tuyen Tinh T" },
+                        "4.1.2 Suc Khoe Cam Bien",
+                        "4.1.3 Bo Loc So",
+                        "4.1.4 Che Do Nhiet Do",
+                        "4.1.5 Cai Dat Nhiet Do",
+                        "4.1.6 Bu Tuyen Tinh T" },
         .children   = { PAGE_CALIBRATION,
+                        PAGE_PH_HEALTH,
                         PAGE_DIGITAL_FILTER,
                         PAGE_TEMP_MODE,
                         PAGE_TEMP_SETTINGS,
@@ -499,8 +632,14 @@ static const page_def_t s_pages_vi[PAGE_COUNT] = {
         .parent     = PAGE_SENSOR_SETTINGS,
     },
 
+    [PAGE_PH_HEALTH] = {
+        .title      = "Suc Khoe Cam Bien",
+        .item_count = 0,
+        .parent     = PAGE_PH_SETTINGS,
+    },
+
     [PAGE_DO_SETTINGS] = {
-        .title      = "Cau Hinh Cam Bien DO",
+        .title      = "Cam Bien DO",
         .item_count = 2,
         .items      = { "4.2.1 Hieu Chuan DO",
                         "4.2.2 Reset Hieu Chuan DO" },
@@ -695,6 +834,12 @@ static const page_def_t s_pages_vi[PAGE_COUNT] = {
         .parent     = PAGE_CALIBRATION,
     },
 
+    [PAGE_CONFIRM_RESET] = {
+        .title      = "Xac Nhan Reset",
+        .item_count = 0,
+        .parent     = PAGE_CALIBRATION,
+    },
+
     [PAGE_MODBUS_EDIT_ADDR] = {
         .title      = "Dia Chi Modbus",
         .item_count = 0,
@@ -715,6 +860,13 @@ static const page_def_t s_pages_vi[PAGE_COUNT] = {
 #define MENU_PIN_LEN        4
 #define MENU_PIN_DEFAULT    "1234"
 
+typedef enum {
+    PIN_MODE_UNLOCK = 0,     /**< Nhập mật khẩu để truy cập Modbus / Cảm biến */
+    PIN_MODE_CHANGE_OLD,    /**< Bước 1 khi thay đổi MK: Nhập MK cũ */
+    PIN_MODE_CHANGE_NEW,    /**< Bước 2 khi thay đổi MK: Nhập MK mới */
+} pin_mode_t;
+
+static pin_mode_t s_pin_mode = PIN_MODE_UNLOCK;
 static char    s_menu_pin_stored[MENU_PIN_LEN + 1] = MENU_PIN_DEFAULT;
 static uint8_t s_pin_entry[MENU_PIN_LEN] = {0, 0, 0, 0};
 static uint8_t s_pin_cursor = 0;
@@ -744,7 +896,98 @@ static struct {
     uint8_t do_cal_type; // 0 = Zero, 1 = Slope
 } s_do_cal_exec;
 
+typedef enum {
+    RESET_TARGET_PH = 0,
+    RESET_TARGET_DO
+} reset_target_t;
+
+static reset_target_t s_confirm_reset_target = RESET_TARGET_PH;
+static menu_page_t    s_confirm_reset_prev_page = PAGE_CALIBRATION;
+
 static float s_do_temp_cal_edit = 25.0f;
+static uint16_t s_history_view_offset = 0; // 0 = mới nhất, 1 = kế mới nhất...
+static uint8_t s_device_info_scroll_offset = 0;
+
+/* =====================================================================
+ * Trạng thái WiFi LCD (Khai báo biến toàn cục nội bộ)
+ * ===================================================================== */
+static wifi_ap_record_t s_wifi_scan_aps[16];
+static uint16_t s_wifi_scan_ap_count = 0;
+static int8_t   s_wifi_scan_selected_idx = 0;
+static uint8_t  s_wifi_scan_scroll_offset = 0;
+
+static char s_wifi_selected_ssid[33] = {0};
+static char s_wifi_pass_input[65] = {0};
+static uint8_t s_wifi_pass_len = 0;
+
+static const char s_char_picker_set[] = 
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "0123456789"
+    "!@#$%^&*()_+-=[]{}|;:,.<>?/ ";
+#define CHAR_PICKER_SET_LEN (sizeof(s_char_picker_set) - 1)
+
+static uint8_t s_char_picker_set_idx = 0;
+
+typedef enum {
+    WIFI_PASS_FOCUS_PICKER = 0,
+    WIFI_PASS_FOCUS_DEL,
+    WIFI_PASS_FOCUS_CONNECT,
+    WIFI_PASS_FOCUS_COUNT
+} wifi_pass_focus_t;
+
+static wifi_pass_focus_t s_wifi_pass_focus = WIFI_PASS_FOCUS_PICKER;
+
+static void menu_render_history_log(void)
+
+{
+    uint16_t total_count = Fram_Log_Get_Count();
+
+    if (total_count == 0) {
+        const char *msg = (g_sys_lang == LANG_VI) ? "Chua co du lieu" : "No Data Stored";
+        uint8_t msg_w = (uint8_t)(strlen(msg) * 6);
+        uint8_t msg_x = (uint8_t)((128 - msg_w) / 2);
+        LCD_DrawString(msg_x, 28, msg, LCD_COLOR_ON);
+        return;
+    }
+
+    if (s_history_view_offset >= total_count) {
+        s_history_view_offset = total_count - 1;
+    }
+
+    uint16_t rel_idx = (total_count - 1) - s_history_view_offset;
+
+    EnvLogRecord_t rec;
+    memset(&rec, 0, sizeof(rec));
+
+    if (!Fram_Log_Read_Record(rel_idx, &rec)) {
+        const char *err = (g_sys_lang == LANG_VI) ? "Loi doc FRAM!" : "FRAM Read Error!";
+        LCD_DrawString(16, 28, err, LCD_COLOR_ON);
+        return;
+    }
+
+    struct tm tm_rec;
+    time_t ts = (time_t)rec.timestamp;
+    localtime_r(&ts, &tm_rec);
+
+    char line_hdr[64];
+    snprintf(line_hdr, sizeof(line_hdr), "#%u/%u %02d/%02d %02d:%02d",
+             (unsigned int)(s_history_view_offset + 1), (unsigned int)total_count,
+             tm_rec.tm_mday, tm_rec.tm_mon + 1, tm_rec.tm_hour, tm_rec.tm_min);
+    LCD_DrawString(2, 13, line_hdr, LCD_COLOR_ON);
+
+    char line_ph[32];
+    snprintf(line_ph, sizeof(line_ph), "pH   : %.2f", (float)rec.ph_x100 / 100.0f);
+    LCD_DrawString(2, 23, line_ph, LCD_COLOR_ON);
+
+    char line_temp[32];
+    snprintf(line_temp, sizeof(line_temp), "Temp : %.2f \xB0" "C", (float)rec.temp_x100 / 100.0f);
+    LCD_DrawString(2, 33, line_temp, LCD_COLOR_ON);
+
+    char line_do[32];
+    snprintf(line_do, sizeof(line_do), "DO   : %.2f mg/L", (float)rec.do_x100 / 100.0f);
+    LCD_DrawString(2, 43, line_do, LCD_COLOR_ON);
+}
 
 /* =====================================================================
  * Cai dat gio thu cong (PAGE_TIME_SETTINGS)
@@ -870,6 +1113,11 @@ static void menu_pin_begin_entry(menu_page_t target)
     s_pin_show_error = false;
     s_pin_reveal = 0;
     s_pin_target_page = target;
+    if (target == PAGE_CHANGE_PIN) {
+        s_pin_mode = PIN_MODE_CHANGE_OLD;
+    } else {
+        s_pin_mode = PIN_MODE_UNLOCK;
+    }
     g_menu.in_pin_entry = true;
 }
 
@@ -888,6 +1136,11 @@ static bool menu_pin_verify(void)
 
 static void goto_page(menu_page_t page)
 {
+    if (page == PAGE_CHANGE_PIN) {
+        menu_pin_begin_entry(PAGE_CHANGE_PIN);
+        return;
+    }
+
     if (page == PAGE_MODBUS_EDIT_ADDR ||
         page == PAGE_MODBUS_SELECT_BAUD ||
         page == PAGE_MODBUS_SELECT_PARITY ||
@@ -933,9 +1186,21 @@ static void goto_page(menu_page_t page)
         }
     } else if (page == PAGE_TEMP_LIN_COMP) {
         s_temp_alpha_edit = g_temp_alpha;
+    } else if (page == PAGE_WIFI_SCAN_LIST) {
+        s_wifi_scan_selected_idx = 0;
+        s_wifi_scan_scroll_offset = 0;
+        wifi_config_manager_trigger_scan();
+    } else if (page == PAGE_WIFI_PASS_ENTRY) {
+        memset(s_wifi_pass_input, 0, sizeof(s_wifi_pass_input));
+        s_wifi_pass_len = 0;
+        s_char_picker_set_idx = 0;
+        s_wifi_pass_focus = WIFI_PASS_FOCUS_PICKER;
+    } else if (page == PAGE_DEVICE_INFO) {
+        s_device_info_scroll_offset = 0;
     }
     ESP_LOGI(TAG_MENU, "Navigate -> page %d", (int)page);
 }
+
 
 /* =====================================================================
  * Debounce nút bấm (edge-detect, polling 50 ms)
@@ -1027,6 +1292,43 @@ static bool btn_edge(btn_idx_t idx)
     return s_btn_state[idx] && !s_btn_prev_state[idx];
 }
 
+static void menu_handle_history_log_buttons(void)
+{
+    const page_def_t *page = (g_sys_lang == LANG_VI) ? &s_pages_vi[g_menu.current_page] : &s_pages_en[g_menu.current_page];
+    uint16_t total_count = Fram_Log_Get_Count();
+
+    if (btn_edge(BTN_IDX_ESC)) {
+        s_history_view_offset = 0;
+        goto_page(page->parent);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    // Nút DOWN (▼): Cuộn về quá khứ (#1 -> #2 -> #3 ... -> #total_count)
+    if (btn_edge(BTN_IDX_DOWN)) {
+        if (total_count > 0) {
+            if (s_history_view_offset < total_count - 1) {
+                s_history_view_offset++;
+            } else {
+                s_history_view_offset = 0; // Đang ở bản ghi cũ nhất (#total_count), bấm DOWN sẽ quay về mới nhất (#1)
+            }
+            g_lcd_need_redraw = true;
+        }
+    }
+
+    // Nút UP (▲): Đi từ quá khứ về hiện tại (#total_count -> ... -> #1). Nếu đang ở #1, bấm UP sẽ quay về cũ nhất (#total_count)
+    if (btn_edge(BTN_IDX_UP)) {
+        if (total_count > 0) {
+            if (s_history_view_offset > 0) {
+                s_history_view_offset--;
+            } else {
+                s_history_view_offset = total_count - 1; // Đang ở #1, bấm UP tự động nhảy tới cũ nhất (#total_count)
+            }
+            g_lcd_need_redraw = true;
+        }
+    }
+}
+
 /* =====================================================================
  * Khởi tạo GPIO nút bấm
  * ===================================================================== */
@@ -1089,7 +1391,520 @@ static void menu_show_alert_dialog(const char *title, const char *msg, bool succ
     vTaskDelay(pdMS_TO_TICKS(1500)); // Khóa màn hình hiển thị thông báo trong 1.5 giây
 }
 
+/* =====================================================================
+ * Trạng thái WiFi LCD & Forward Declarations
+ * ===================================================================== */
+static void draw_arrow_up(uint8_t x, uint8_t y, uint8_t color);
+static void draw_arrow_down(uint8_t x, uint8_t y, uint8_t color);
+static void draw_arrow_right(uint8_t x, uint8_t y, uint8_t color);
+static void draw_arrow_up_large(uint8_t x, uint8_t y, uint8_t color);
+static void draw_arrow_down_large(uint8_t x, uint8_t y, uint8_t color);
+static void draw_arrow_right_large(uint8_t x, uint8_t y, uint8_t color);
+
+/* ── 1. Màn hình Danh sách WiFi ── */
+
+static void menu_render_wifi_scan_list(void)
+{
+    LCD_Clear();
+
+    LCD_FillRect(0, 0, 128, TITLE_BAR_H, LCD_COLOR_ON);
+    LCD_DrawString(4, 2, g_sys_lang == LANG_VI ? "Danh Sach WiFi" : "WiFi Networks", LCD_COLOR_OFF);
+
+    wifi_scan_state_t scan_st = wifi_config_manager_get_scan_state();
+
+    if (scan_st == WIFI_SCAN_STATE_SCANNING) {
+        const char *msg = (g_sys_lang == LANG_VI) ? "Dang quet WiFi..." : "Scanning WiFi...";
+        uint8_t msg_w = strlen(msg) * 6;
+        uint8_t msg_x = (128 - msg_w) / 2;
+        LCD_DrawString(msg_x, 26, msg, LCD_COLOR_ON);
+        g_lcd_need_redraw = true;
+    } else {
+        s_wifi_scan_ap_count = wifi_config_manager_get_scan_results(s_wifi_scan_aps, 16);
+
+        if (s_wifi_scan_ap_count == 0) {
+            const char *msg1 = (g_sys_lang == LANG_VI) ? "Khong tim thay WiFi!" : "No WiFi Found!";
+            const char *msg2 = (g_sys_lang == LANG_VI) ? "ENT: Quet Lai" : "ENT: Rescan";
+            uint8_t w1 = strlen(msg1) * 6;
+            uint8_t w2 = strlen(msg2) * 6;
+            LCD_DrawString((128 - w1) / 2, 22, msg1, LCD_COLOR_ON);
+            LCD_DrawString((128 - w2) / 2, 34, msg2, LCD_COLOR_ON);
+        } else {
+            uint8_t visible = s_wifi_scan_ap_count - s_wifi_scan_scroll_offset;
+            if (visible > VISIBLE_ITEMS) visible = VISIBLE_ITEMS;
+
+            for (uint8_t i = 0; i < visible; i++) {
+                uint8_t idx = s_wifi_scan_scroll_offset + i;
+                uint8_t y = ITEMS_Y_START + i * ITEM_ROW_H;
+                bool is_sel = (idx == s_wifi_scan_selected_idx);
+
+                char row_buf[32];
+                snprintf(row_buf, sizeof(row_buf), "%.13s (%d)", (char*)s_wifi_scan_aps[idx].ssid, s_wifi_scan_aps[idx].rssi);
+
+                if (is_sel) {
+                    LCD_FillRect(0, y, 128, ITEM_ROW_H, LCD_COLOR_ON);
+                    LCD_DrawStringScroll(4, y + 1, row_buf, 120, 0, LCD_COLOR_OFF);
+                    draw_arrow_right(121, y + 2, LCD_COLOR_OFF);
+                } else {
+                    LCD_DrawStringScroll(4, y + 1, row_buf, 120, 0, LCD_COLOR_ON);
+                }
+            }
+
+            if (s_wifi_scan_scroll_offset > 0) {
+                draw_arrow_up(120, ITEMS_Y_START + 1, LCD_COLOR_ON);
+            }
+            if (s_wifi_scan_scroll_offset + VISIBLE_ITEMS < s_wifi_scan_ap_count) {
+                draw_arrow_down(120, STATUS_BAR_Y - 6, LCD_COLOR_ON);
+            }
+        }
+    }
+
+    LCD_FillRect(0, STATUS_BAR_Y, 128, STATUS_BAR_H, LCD_COLOR_ON);
+    draw_arrow_down_large(8, STATUS_BAR_Y + 3, LCD_COLOR_OFF);
+    draw_arrow_up_large(32, STATUS_BAR_Y + 3, LCD_COLOR_OFF);
+    LCD_DrawString(80, STATUS_BAR_Y + 3, "ESC", LCD_COLOR_OFF);
+    LCD_DrawString(104, STATUS_BAR_Y + 3, "ENT", LCD_COLOR_OFF);
+
+    LCD_Flush();
+}
+
+static void menu_handle_wifi_scan_list_buttons(void)
+{
+    if (btn_edge(BTN_IDX_ESC)) {
+        goto_page(PAGE_WIFI_SETTINGS);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    wifi_scan_state_t scan_st = wifi_config_manager_get_scan_state();
+    if (scan_st == WIFI_SCAN_STATE_SCANNING) {
+        return;
+    }
+
+    if (s_wifi_scan_ap_count == 0) {
+        if (btn_edge(BTN_IDX_ENTER)) {
+            wifi_config_manager_trigger_scan();
+            g_lcd_need_redraw = true;
+        }
+        return;
+    }
+
+    if (btn_edge(BTN_IDX_UP)) {
+        if (s_wifi_scan_selected_idx > 0) {
+            s_wifi_scan_selected_idx--;
+            if (s_wifi_scan_selected_idx < s_wifi_scan_scroll_offset) {
+                s_wifi_scan_scroll_offset = s_wifi_scan_selected_idx;
+            }
+            g_lcd_need_redraw = true;
+        }
+    }
+
+    if (btn_edge(BTN_IDX_DOWN)) {
+        if (s_wifi_scan_selected_idx < s_wifi_scan_ap_count - 1) {
+            s_wifi_scan_selected_idx++;
+            if (s_wifi_scan_selected_idx >= s_wifi_scan_scroll_offset + VISIBLE_ITEMS) {
+                s_wifi_scan_scroll_offset = s_wifi_scan_selected_idx - VISIBLE_ITEMS + 1;
+            }
+            g_lcd_need_redraw = true;
+        }
+    }
+
+    if (btn_edge(BTN_IDX_ENTER)) {
+        if (s_wifi_scan_selected_idx >= 0 && s_wifi_scan_selected_idx < s_wifi_scan_ap_count) {
+            strncpy(s_wifi_selected_ssid, (char*)s_wifi_scan_aps[s_wifi_scan_selected_idx].ssid, sizeof(s_wifi_selected_ssid) - 1);
+            s_wifi_selected_ssid[sizeof(s_wifi_selected_ssid) - 1] = '\0';
+            goto_page(PAGE_WIFI_PASS_ENTRY);
+            g_lcd_need_redraw = true;
+        }
+    }
+
+    btn_edge(BTN_IDX_RIGHT);
+}
+
+/* ── 2. Màn hình Nhập Mật Khẩu WiFi (Character Picker / Spin-Box) ── */
+static void menu_render_wifi_pass_entry(void)
+{
+    LCD_Clear();
+
+    LCD_FillRect(0, 0, 128, TITLE_BAR_H, LCD_COLOR_ON);
+    LCD_DrawString(4, 2, g_sys_lang == LANG_VI ? "Nhap Mat Khau" : "WiFi Password", LCD_COLOR_OFF);
+
+    char ssid_line[32];
+    snprintf(ssid_line, sizeof(ssid_line), "SSID: %.14s", s_wifi_selected_ssid);
+    LCD_DrawString(2, 13, ssid_line, LCD_COLOR_ON);
+
+    char pass_line[32];
+    char masked_pass[20] = {0};
+    uint8_t show_len = (s_wifi_pass_len > 13) ? 13 : s_wifi_pass_len;
+
+    for (uint8_t i = 0; i < show_len; i++) {
+        masked_pass[i] = '*';
+    }
+    masked_pass[show_len] = '\0';
+
+    snprintf(pass_line, sizeof(pass_line), "Pass: %s_", masked_pass);
+    LCD_DrawString(2, 23, pass_line, LCD_COLOR_ON);
+
+    char cur_char = s_char_picker_set[s_char_picker_set_idx];
+    char picker_str[16];
+    if (cur_char == ' ') {
+        snprintf(picker_str, sizeof(picker_str), "[ SPC ]");
+    } else {
+        snprintf(picker_str, sizeof(picker_str), "[ %c ]", cur_char);
+    }
+
+    if (s_wifi_pass_focus == WIFI_PASS_FOCUS_PICKER) {
+        LCD_FillRect(2, 34, 45, 12, LCD_COLOR_ON);
+        LCD_DrawString(4, 36, picker_str, LCD_COLOR_OFF);
+    } else {
+        LCD_DrawRect(2, 34, 45, 12, LCD_COLOR_ON);
+        LCD_DrawString(4, 36, picker_str, LCD_COLOR_ON);
+    }
+
+    if (s_wifi_pass_focus == WIFI_PASS_FOCUS_DEL) {
+        LCD_FillRect(52, 34, 32, 12, LCD_COLOR_ON);
+        LCD_DrawString(54, 36, "[DEL]", LCD_COLOR_OFF);
+    } else {
+        LCD_DrawRect(52, 34, 32, 12, LCD_COLOR_ON);
+        LCD_DrawString(54, 36, "[DEL]", LCD_COLOR_ON);
+    }
+
+    const char *conn_lbl = (g_sys_lang == LANG_VI) ? "[LUU]" : "[OK]";
+    if (s_wifi_pass_focus == WIFI_PASS_FOCUS_CONNECT) {
+        LCD_FillRect(88, 34, 38, 12, LCD_COLOR_ON);
+        LCD_DrawString(90, 36, conn_lbl, LCD_COLOR_OFF);
+    } else {
+        LCD_DrawRect(88, 34, 38, 12, LCD_COLOR_ON);
+        LCD_DrawString(90, 36, conn_lbl, LCD_COLOR_ON);
+    }
+
+    LCD_FillRect(0, STATUS_BAR_Y, 128, STATUS_BAR_H, LCD_COLOR_ON);
+    LCD_DrawString(4, STATUS_BAR_Y + 3, "ESC", LCD_COLOR_OFF);
+    LCD_DrawString(34, STATUS_BAR_Y + 3, "-/+", LCD_COLOR_OFF);
+    draw_arrow_right_large(64, STATUS_BAR_Y + 3, LCD_COLOR_OFF);
+    LCD_DrawString(90, STATUS_BAR_Y + 3, "ENT", LCD_COLOR_OFF);
+
+    LCD_Flush();
+}
+
+static void menu_handle_wifi_pass_entry_buttons(void)
+{
+    if (btn_edge(BTN_IDX_ESC)) {
+        goto_page(PAGE_WIFI_SCAN_LIST);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    if (btn_edge(BTN_IDX_RIGHT)) {
+        s_wifi_pass_focus = (wifi_pass_focus_t)((s_wifi_pass_focus + 1) % WIFI_PASS_FOCUS_COUNT);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    if (btn_edge(BTN_IDX_UP)) {
+        if (s_wifi_pass_focus == WIFI_PASS_FOCUS_PICKER) {
+            s_char_picker_set_idx = (s_char_picker_set_idx + 1) % CHAR_PICKER_SET_LEN;
+        } else {
+            s_wifi_pass_focus = (wifi_pass_focus_t)((s_wifi_pass_focus + WIFI_PASS_FOCUS_COUNT - 1) % WIFI_PASS_FOCUS_COUNT);
+        }
+        g_lcd_need_redraw = true;
+    }
+
+    if (btn_edge(BTN_IDX_DOWN)) {
+        if (s_wifi_pass_focus == WIFI_PASS_FOCUS_PICKER) {
+            s_char_picker_set_idx = (s_char_picker_set_idx + CHAR_PICKER_SET_LEN - 1) % CHAR_PICKER_SET_LEN;
+        } else {
+            s_wifi_pass_focus = (wifi_pass_focus_t)((s_wifi_pass_focus + 1) % WIFI_PASS_FOCUS_COUNT);
+        }
+        g_lcd_need_redraw = true;
+    }
+
+    if (btn_edge(BTN_IDX_ENTER)) {
+        if (s_wifi_pass_focus == WIFI_PASS_FOCUS_PICKER) {
+            if (s_wifi_pass_len < 64) {
+                s_wifi_pass_input[s_wifi_pass_len] = s_char_picker_set[s_char_picker_set_idx];
+                s_wifi_pass_len++;
+                s_wifi_pass_input[s_wifi_pass_len] = '\0';
+            }
+            g_lcd_need_redraw = true;
+        } else if (s_wifi_pass_focus == WIFI_PASS_FOCUS_DEL) {
+            if (s_wifi_pass_len > 0) {
+                s_wifi_pass_len--;
+                s_wifi_pass_input[s_wifi_pass_len] = '\0';
+            }
+            g_lcd_need_redraw = true;
+        } else if (s_wifi_pass_focus == WIFI_PASS_FOCUS_CONNECT) {
+            wifi_config_manager_save(s_wifi_selected_ssid, s_wifi_pass_input);
+            wifi_config_manager_schedule_connect();
+            menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Ket Noi WiFi" : "WiFi Connect", g_sys_lang == LANG_VI ? "Dang Ket Noi..." : "Connecting...", true);
+            goto_page(PAGE_WIFI_STATUS);
+            g_lcd_need_redraw = true;
+        }
+    }
+}
+
+/* ── 3. Màn hình Trạng Thái WiFi ── */
+static void menu_render_wifi_status(void)
+{
+    LCD_Clear();
+
+    LCD_FillRect(0, 0, 128, TITLE_BAR_H, LCD_COLOR_ON);
+    LCD_DrawString(4, 2, g_sys_lang == LANG_VI ? "Trang Thai WiFi" : "WiFi Status", LCD_COLOR_OFF);
+
+    char line1[32], line2[32], line3[32], line4[32];
+
+    char saved_ssid[32] = {0};
+    char saved_pass[64] = {0};
+    wifi_config_manager_load(saved_ssid, sizeof(saved_ssid), saved_pass, sizeof(saved_pass));
+
+    bool is_conn = Sys_Info.isWifiConnected;
+    snprintf(line1, sizeof(line1), "Status: %s", is_conn ? "CONNECTED" : "CONNECTING...");
+    snprintf(line2, sizeof(line2), "SSID: %.14s", saved_ssid[0] ? saved_ssid : "None");
+
+    if (is_conn) {
+        esp_netif_ip_info_t ip_info;
+        esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (sta_netif && esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK) {
+            snprintf(line3, sizeof(line3), "IP: " IPSTR, IP2STR(&ip_info.ip));
+        } else {
+            snprintf(line3, sizeof(line3), "IP: Got IP");
+        }
+    } else {
+        snprintf(line3, sizeof(line3), "IP: 0.0.0.0");
+    }
+
+    snprintf(line4, sizeof(line4), "AP: 192.168.14.1");
+
+    LCD_DrawString(2, 13, line1, LCD_COLOR_ON);
+    LCD_DrawString(2, 23, line2, LCD_COLOR_ON);
+    LCD_DrawString(2, 33, line3, LCD_COLOR_ON);
+    LCD_DrawString(2, 42, line4, LCD_COLOR_ON);
+
+    LCD_FillRect(0, STATUS_BAR_Y, 128, STATUS_BAR_H, LCD_COLOR_ON);
+    LCD_DrawString(8, STATUS_BAR_Y + 3, "ESC", LCD_COLOR_OFF);
+    LCD_Flush();
+}
+
+static void menu_handle_wifi_status_buttons(void)
+{
+    if (btn_edge(BTN_IDX_ESC)) {
+        goto_page(PAGE_WIFI_SETTINGS);
+        g_lcd_need_redraw = true;
+    }
+}
+
+/* ── 4. Màn hình Thông Tin Thiết Bị (Device Info - Grouped Scrollable View) ── */
+
+static const char* get_reset_reason_name(esp_reset_reason_t reason)
+{
+    switch (reason) {
+        case ESP_RST_POWERON:   return "Power-on Reset";
+        case ESP_RST_EXT:       return "External Pin";
+        case ESP_RST_SW:        return "Software Reset";
+        case ESP_RST_PANIC:     return "Exception Panic";
+        case ESP_RST_INT_WDT:   return "Int Watchdog";
+        case ESP_RST_TASK_WDT:  return "Task Watchdog";
+        case ESP_RST_WDT:       return "Other Watchdog";
+        case ESP_RST_DEEPSLEEP: return "Deep Sleep";
+        case ESP_RST_BROWNOUT:  return "Brownout Reset";
+        case ESP_RST_SDIO:      return "SDIO Reset";
+        default:                return "Unknown Reset";
+    }
+}
+
+typedef struct {
+    char text[44];
+    bool is_header;
+} device_info_line_t;
+
+static void menu_render_device_info(void)
+{
+    LCD_Clear();
+
+    LCD_FillRect(0, 0, 128, TITLE_BAR_H, LCD_COLOR_ON);
+    LCD_DrawString(4, 2, g_sys_lang == LANG_VI ? "Thong Tin Thiet Bi" : "Device Info", LCD_COLOR_OFF);
+
+    device_info_line_t lines[24];
+    uint8_t count = 0;
+
+    /* ── Nhóm 1: Mạng & Cloud Azure ── */
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             g_sys_lang == LANG_VI ? "--- 1. MANG & AZURE ---" : "--- 1. NET & AZURE ---");
+    lines[count++].is_header = true;
+
+    bool is_wifi = Sys_Info.isWifiConnected;
+    char wifi_ssid[32] = {0};
+    int8_t rssi = -100;
+    if (is_wifi) {
+        wifi_ap_record_t ap_info;
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            strncpy(wifi_ssid, (char*)ap_info.ssid, sizeof(wifi_ssid) - 1);
+            rssi = ap_info.rssi;
+        }
+    }
+    if (!wifi_ssid[0]) {
+        wifi_config_manager_load(wifi_ssid, sizeof(wifi_ssid), NULL, 0);
+    }
+
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             "WiFi: %s", is_wifi ? "Connected" : "Disconnected");
+    lines[count++].is_header = false;
+
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             "SSID: %.14s", wifi_ssid[0] ? wifi_ssid : "None");
+    lines[count++].is_header = false;
+
+    if (is_wifi) {
+        snprintf(lines[count].text, sizeof(lines[count].text), "Signal: %d dBm", rssi);
+    } else {
+        snprintf(lines[count].text, sizeof(lines[count].text), "Signal: No Signal");
+    }
+    lines[count++].is_header = false;
+
+    if (is_wifi) {
+        esp_netif_ip_info_t ip_info;
+        esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (sta_netif && esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK) {
+            snprintf(lines[count].text, sizeof(lines[count].text), "IP: " IPSTR, IP2STR(&ip_info.ip));
+        } else {
+            snprintf(lines[count].text, sizeof(lines[count].text), "IP: Got IP");
+        }
+    } else {
+        snprintf(lines[count].text, sizeof(lines[count].text), "IP: 0.0.0.0");
+    }
+    lines[count++].is_header = false;
+
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             "Azure: %s", IoTHubHandle.isAzureInitialized ? "Connected" : "Disconnected");
+    lines[count++].is_header = false;
+
+    const char *dev_id = IoTHubHandle.deviceId[0] ? IoTHubHandle.deviceId : SYS_IOT_HUB_DEVICE_ID_DEFAULT;
+    snprintf(lines[count].text, sizeof(lines[count].text), "Dev ID: %.12s", dev_id);
+    lines[count++].is_header = false;
+
+    const char *hub_host = IoTHubHandle.hostName[0] ? IoTHubHandle.hostName : SYS_IOT_HUB_HOST_NAME_DEFAULT;
+    snprintf(lines[count].text, sizeof(lines[count].text), "Hub: %.15s", hub_host);
+    lines[count++].is_header = false;
+
+    /* ── Nhóm 2: Hệ thống & OTA ── */
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             g_sys_lang == LANG_VI ? "--- 2. HE THONG & OTA ---" : "--- 2. SYSTEM & OTA ---");
+    lines[count++].is_header = true;
+
+    uint32_t free_heap = esp_get_free_heap_size();
+    snprintf(lines[count].text, sizeof(lines[count].text), "Free RAM: %.1f KB", free_heap / 1024.0f);
+    lines[count++].is_header = false;
+
+    uint64_t uptime_sec = esp_timer_get_time() / 1000000ULL;
+    uint32_t days = uptime_sec / 86400ULL;
+    uint32_t hours = (uptime_sec % 86400ULL) / 3600ULL;
+    uint32_t mins = (uptime_sec % 3600ULL) / 60ULL;
+    uint32_t secs = uptime_sec % 60ULL;
+
+    if (days > 0) {
+        snprintf(lines[count].text, sizeof(lines[count].text), "Uptime: %lud %luh %lum", (unsigned long)days, (unsigned long)hours, (unsigned long)mins);
+    } else {
+        snprintf(lines[count].text, sizeof(lines[count].text), "Uptime: %luh %lum %lus", (unsigned long)hours, (unsigned long)mins, (unsigned long)secs);
+    }
+    lines[count++].is_header = false;
+
+    snprintf(lines[count].text, sizeof(lines[count].text), "Firmware: v%s", VERSION);
+    lines[count++].is_header = false;
+
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    snprintf(lines[count].text, sizeof(lines[count].text), "Active Slot: %s", running ? running->label : "factory");
+    lines[count++].is_header = false;
+
+    snprintf(lines[count].text, sizeof(lines[count].text), "OTA Status: %s", User_Ota_Get_Status_String());
+    lines[count++].is_header = false;
+
+    /* ── Nhóm 3: Thời gian & Chẩn đoán Nguồn ── */
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             g_sys_lang == LANG_VI ? "--- 3. GIO & NGUON ---" : "--- 3. TIME & RESET ---");
+    lines[count++].is_header = true;
+
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             "Time: %02d/%02d %02d:%02d:%02d",
+             tm_now.tm_mday, tm_now.tm_mon + 1, tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec);
+    lines[count++].is_header = false;
+
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             "Sync: %s", Sys_Info.isTimeSync ? "Synced (NTP/PC)" : "Unsynced");
+    lines[count++].is_header = false;
+
+    esp_reset_reason_t rst_reason = esp_reset_reason();
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             "Reset: %s", get_reset_reason_name(rst_reason));
+    lines[count++].is_header = false;
+
+    snprintf(lines[count].text, sizeof(lines[count].text),
+             "Reset Count: %lu", (unsigned long)reset_count);
+    lines[count++].is_header = false;
+
+    /* ── Vẽ các dòng hiển thị trong cửa sổ cuộn ── */
+    uint8_t visible = count - s_device_info_scroll_offset;
+    if (visible > VISIBLE_ITEMS) visible = VISIBLE_ITEMS;
+
+    for (uint8_t i = 0; i < visible; i++) {
+        uint8_t idx = s_device_info_scroll_offset + i;
+        uint8_t y = ITEMS_Y_START + i * ITEM_ROW_H;
+
+        if (lines[idx].is_header) {
+            LCD_FillRect(0, y, 128, ITEM_ROW_H, LCD_COLOR_ON);
+            uint8_t w = strlen(lines[idx].text) * 6;
+            uint8_t x = (128 > w) ? (128 - w) / 2 : 0;
+            LCD_DrawString(x, y + 1, lines[idx].text, LCD_COLOR_OFF);
+        } else {
+            LCD_DrawStringScroll(4, y + 1, lines[idx].text, 120, 0, LCD_COLOR_ON);
+        }
+    }
+
+    if (s_device_info_scroll_offset > 0) {
+        draw_arrow_up(120, ITEMS_Y_START + 1, LCD_COLOR_ON);
+    }
+    if (s_device_info_scroll_offset + VISIBLE_ITEMS < count) {
+        draw_arrow_down(120, STATUS_BAR_Y - 6, LCD_COLOR_ON);
+    }
+
+    LCD_FillRect(0, STATUS_BAR_Y, 128, STATUS_BAR_H, LCD_COLOR_ON);
+    draw_arrow_down_large(8, STATUS_BAR_Y + 3, LCD_COLOR_OFF);
+    draw_arrow_up_large(32, STATUS_BAR_Y + 3, LCD_COLOR_OFF);
+    LCD_DrawString(80, STATUS_BAR_Y + 3, "ESC", LCD_COLOR_OFF);
+    LCD_Flush();
+}
+
+static void menu_handle_device_info_buttons(void)
+{
+    const uint8_t total_lines = 19;
+    if (btn_edge(BTN_IDX_ESC)) {
+        s_device_info_scroll_offset = 0;
+        goto_page(PAGE_MAIN_MENU);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    if (btn_edge(BTN_IDX_UP)) {
+        if (s_device_info_scroll_offset > 0) {
+            s_device_info_scroll_offset--;
+            g_lcd_need_redraw = true;
+        }
+    }
+
+    if (btn_edge(BTN_IDX_DOWN)) {
+        if (s_device_info_scroll_offset + VISIBLE_ITEMS < total_lines) {
+            s_device_info_scroll_offset++;
+            g_lcd_need_redraw = true;
+        }
+    }
+
+    btn_edge(BTN_IDX_RIGHT);
+    btn_edge(BTN_IDX_ENTER);
+}
+
 static void menu_handle_leaf_select(void)
+
 {
     menu_page_t cur = g_menu.current_page;
     uint8_t sel = g_menu.selected;
@@ -1137,36 +1952,32 @@ static void menu_handle_leaf_select(void)
     }
     else if (cur == PAGE_CALIBRATION) {
         if (sel == 2) {
-            Reset_PH_Calibration();
-            menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Khoi Phuc pH" : "Reset pH", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
-            goto_page(PAGE_CALIBRATION);
+            s_confirm_reset_target = RESET_TARGET_PH;
+            s_confirm_reset_prev_page = PAGE_CALIBRATION;
+            goto_page(PAGE_CONFIRM_RESET);
             g_lcd_need_redraw = true;
         }
     }
     else if (cur == PAGE_DO_SETTINGS) {
         if (sel == 1) {
-            esp_err_t err = do_sensor_reset();
-            if (err == ESP_OK) {
-                menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Khoi Phuc DO" : "Reset DO", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
-            } else {
-                menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Khoi Phuc DO" : "Reset DO", g_sys_lang == LANG_VI ? "That Bai!" : "FAILED!", false);
-            }
-            goto_page(PAGE_DO_SETTINGS);
+            s_confirm_reset_target = RESET_TARGET_DO;
+            s_confirm_reset_prev_page = PAGE_DO_SETTINGS;
+            goto_page(PAGE_CONFIRM_RESET);
             g_lcd_need_redraw = true;
         }
     }
     else if (cur == PAGE_CAL_2PT) {
         if (sel == 0) {
             s_cal_exec.target_ph = 4.00f;
-            s_cal_exec.min_mv    = 157.0f;
-            s_cal_exec.max_mv    = 197.0f;
+            s_cal_exec.min_mv    = 140.0f;
+            s_cal_exec.max_mv    = 210.0f;
             s_cal_exec.cal_type  = 2;
             s_cal_exec.group_idx = 0;
             goto_page(PAGE_CAL_EXEC);
         } else if (sel == 1) {
             s_cal_exec.target_ph = 7.00f;
-            s_cal_exec.min_mv    = -20.0f;
-            s_cal_exec.max_mv    = 20.0f;
+            s_cal_exec.min_mv    = -30.0f;
+            s_cal_exec.max_mv    = 30.0f;
             s_cal_exec.cal_type  = 2;
             s_cal_exec.group_idx = 0;
             goto_page(PAGE_CAL_EXEC);
@@ -1176,22 +1987,22 @@ static void menu_handle_leaf_select(void)
     else if (cur == PAGE_CAL_3PT_G1) {
         if (sel == 0) {
             s_cal_exec.target_ph = 4.00f;
-            s_cal_exec.min_mv    = 157.0f;
-            s_cal_exec.max_mv    = 197.0f;
+            s_cal_exec.min_mv    = 140.0f;
+            s_cal_exec.max_mv    = 210.0f;
             s_cal_exec.cal_type  = 3;
             s_cal_exec.group_idx = 1;
             goto_page(PAGE_CAL_EXEC);
         } else if (sel == 1) {
             s_cal_exec.target_ph = 6.86f;
-            s_cal_exec.min_mv    = -12.0f;
-            s_cal_exec.max_mv    = 28.0f;
+            s_cal_exec.min_mv    = -20.0f;
+            s_cal_exec.max_mv    = 35.0f;
             s_cal_exec.cal_type  = 3;
             s_cal_exec.group_idx = 1;
             goto_page(PAGE_CAL_EXEC);
         } else if (sel == 2) {
             s_cal_exec.target_ph = 9.18f;
-            s_cal_exec.min_mv    = -148.0f;
-            s_cal_exec.max_mv    = -108.0f;
+            s_cal_exec.min_mv    = -160.0f;
+            s_cal_exec.max_mv    = -95.0f;
             s_cal_exec.cal_type  = 3;
             s_cal_exec.group_idx = 1;
             goto_page(PAGE_CAL_EXEC);
@@ -1201,22 +2012,22 @@ static void menu_handle_leaf_select(void)
     else if (cur == PAGE_CAL_3PT_G2) {
         if (sel == 0) {
             s_cal_exec.target_ph = 4.00f;
-            s_cal_exec.min_mv    = 157.0f;
-            s_cal_exec.max_mv    = 197.0f;
+            s_cal_exec.min_mv    = 140.0f;
+            s_cal_exec.max_mv    = 210.0f;
             s_cal_exec.cal_type  = 3;
             s_cal_exec.group_idx = 2;
             goto_page(PAGE_CAL_EXEC);
         } else if (sel == 1) {
             s_cal_exec.target_ph = 7.00f;
-            s_cal_exec.min_mv    = -20.0f;
-            s_cal_exec.max_mv    = 20.0f;
+            s_cal_exec.min_mv    = -30.0f;
+            s_cal_exec.max_mv    = 30.0f;
             s_cal_exec.cal_type  = 3;
             s_cal_exec.group_idx = 2;
             goto_page(PAGE_CAL_EXEC);
         } else if (sel == 2) {
             s_cal_exec.target_ph = 10.00f;
-            s_cal_exec.min_mv    = -197.0f;
-            s_cal_exec.max_mv    = -157.0f;
+            s_cal_exec.min_mv    = -210.0f;
+            s_cal_exec.max_mv    = -140.0f;
             s_cal_exec.cal_type  = 3;
             s_cal_exec.group_idx = 2;
             goto_page(PAGE_CAL_EXEC);
@@ -1225,29 +2036,21 @@ static void menu_handle_leaf_select(void)
     }
     else if (cur == PAGE_RESET_SENSOR) {
         if (sel == 0) {
-            Reset_PH_Calibration();
-            menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Khoi Phuc pH" : "Reset pH", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
-            goto_page(PAGE_CALIBRATION);
+            s_confirm_reset_target = RESET_TARGET_PH;
+            s_confirm_reset_prev_page = PAGE_RESET_SENSOR;
+            goto_page(PAGE_CONFIRM_RESET);
         } else if (sel == 1) {
-            esp_err_t err = do_sensor_reset();
-            if (err == ESP_OK) {
-                menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Khoi Phuc DO" : "Reset DO", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
-            } else {
-                menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Khoi Phuc DO" : "Reset DO", g_sys_lang == LANG_VI ? "That Bai!" : "FAILED!", false);
-            }
-            goto_page(PAGE_CALIBRATION);
+            s_confirm_reset_target = RESET_TARGET_DO;
+            s_confirm_reset_prev_page = PAGE_RESET_SENSOR;
+            goto_page(PAGE_CONFIRM_RESET);
         }
         g_lcd_need_redraw = true;
     }
     else if (cur == PAGE_CAL_DO) {
         if (sel == 3) {
-            esp_err_t err = do_sensor_reset(); // Thực thi khôi phục cài đặt gốc
-            if (err == ESP_OK) {
-                menu_show_alert_dialog("Khoi Phuc DO", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
-            } else {
-                menu_show_alert_dialog("Khoi Phuc DO", g_sys_lang == LANG_VI ? "That Bai!" : "FAILED!", false);
-            }
-            goto_page(PAGE_CAL_DO);
+            s_confirm_reset_target = RESET_TARGET_DO;
+            s_confirm_reset_prev_page = PAGE_CAL_DO;
+            goto_page(PAGE_CONFIRM_RESET);
             g_lcd_need_redraw = true;
         }
     }
@@ -1636,6 +2439,144 @@ static void menu_handle_cal_do_temp_buttons(void)
     // RIGHT – dự phòng (bỏ qua)
     btn_edge(BTN_IDX_RIGHT);
 }
+
+/* ── Màn hình Hỏi xác nhận Reset cảm biến (pH / DO) ── */
+static void menu_render_confirm_reset(void)
+{
+    LCD_Clear();
+
+    // 1. Tiêu đề
+    LCD_FillRect(0, 0, 128, TITLE_BAR_H, LCD_COLOR_ON);
+    const char *title = (g_sys_lang == LANG_VI) ? "Xac Nhan Reset" : "Confirm Reset";
+    LCD_DrawString(4, 1, title, LCD_COLOR_OFF);
+
+    // 2. Nội dung câu hỏi và chi tiết mục reset
+    const char *line1 = (g_sys_lang == LANG_VI) ? "Ban co chac chan?" : "Are you sure?";
+    const char *line2 = (s_confirm_reset_target == RESET_TARGET_PH) ?
+                        ((g_sys_lang == LANG_VI) ? "Reset sensor pH?" : "Reset pH sensor?") :
+                        ((g_sys_lang == LANG_VI) ? "Reset sensor DO?" : "Reset DO sensor?");
+    const char *line3 = (g_sys_lang == LANG_VI) ? "Dua ve mac dinh!" : "Reset to default!";
+
+    uint8_t w1 = strlen(line1) * 6;
+    uint8_t w2 = strlen(line2) * 6;
+    uint8_t w3 = strlen(line3) * 6;
+
+    LCD_DrawString((LCD_WIDTH - w1) / 2, 16, line1, LCD_COLOR_ON);
+    LCD_DrawString((LCD_WIDTH - w2) / 2, 27, line2, LCD_COLOR_ON);
+    LCD_DrawString((LCD_WIDTH - w3) / 2, 38, line3, LCD_COLOR_ON);
+
+    // 3. Thanh nút bấm phía dưới (ESC: HUY, ENT: RESET)
+    LCD_FillRect(0, STATUS_BAR_Y, 128, STATUS_BAR_H, LCD_COLOR_ON);
+    LCD_DrawString(8, STATUS_BAR_Y + 3, (g_sys_lang == LANG_VI) ? "HUY" : "ESC", LCD_COLOR_OFF);
+    LCD_DrawString(84, STATUS_BAR_Y + 3, (g_sys_lang == LANG_VI) ? "RESET" : "ENT", LCD_COLOR_OFF);
+
+    LCD_Flush();
+}
+
+static void menu_handle_confirm_reset_buttons(void)
+{
+    if (btn_edge(BTN_IDX_ESC)) {
+        goto_page(s_confirm_reset_prev_page);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    if (btn_edge(BTN_IDX_ENTER)) {
+        if (s_confirm_reset_target == RESET_TARGET_PH) {
+            Reset_PH_Calibration();
+            menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Khoi Phuc pH" : "Reset pH", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
+        } else {
+            esp_err_t err = do_sensor_reset();
+            if (err == ESP_OK) {
+                menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Khoi Phuc DO" : "Reset DO", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
+            } else {
+                menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Khoi Phuc DO" : "Reset DO", g_sys_lang == LANG_VI ? "That Bai!" : "FAILED!", false);
+            }
+        }
+        goto_page(s_confirm_reset_prev_page);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    btn_edge(BTN_IDX_RIGHT);
+}
+
+/* ── Màn hình Kiểm tra Sức khỏe Cảm biến pH ── */
+static void menu_render_ph_health(void)
+{
+    LCD_Clear();
+
+    // 1. Tiêu đề (nền đen chữ trắng)
+    LCD_FillRect(0, 0, 128, TITLE_BAR_H, LCD_COLOR_ON);
+    const char *title = (g_sys_lang == LANG_VI) ? "Suc Khoe Cam Bien pH" : "pH Sensor Health";
+    LCD_DrawString(4, 1, title, LCD_COLOR_OFF);
+
+    // 2. Lấy dữ liệu chẩn đoán sức khỏe cảm biến pH
+    PhSensorHealth_t health = Get_PH_Sensor_Health();
+
+    if (!health.is_calibrated) {
+        // Chưa được hiệu chuẩn thực tế
+        const char *msg1 = (g_sys_lang == LANG_VI) ? "Chua Hieu Chuan!" : "Not Calibrated!";
+        const char *msg2 = (g_sys_lang == LANG_VI) ? "Vui long calib ph" : "Please calib pH";
+        const char *msg3 = (g_sys_lang == LANG_VI) ? "de tinh suc khoe." : "to get health data";
+
+        LCD_DrawString((128 - strlen(msg1) * 6) / 2, 16, msg1, LCD_COLOR_ON);
+        LCD_DrawString((128 - strlen(msg2) * 6) / 2, 28, msg2, LCD_COLOR_ON);
+        LCD_DrawString((128 - strlen(msg3) * 6) / 2, 38, msg3, LCD_COLOR_ON);
+    } else {
+        // Dòng 1: Slope % & sensitivity
+        char slope_str[32];
+        snprintf(slope_str, sizeof(slope_str), "Slope : %.1f%% (%.1fmV)", health.slope_pct, health.sens_mv_per_ph);
+        LCD_DrawString(2, 13, slope_str, LCD_COLOR_ON);
+
+        // Dòng 2: Zero Offset mV
+        char zero_str[32];
+        snprintf(zero_str, sizeof(zero_str), "Zero  : %s%.1f mV", (health.zero_offset_mv >= 0.0f) ? "+" : "", health.zero_offset_mv);
+        LCD_DrawString(2, 23, zero_str, LCD_COLOR_ON);
+
+        // Dòng 3 & 4: Đánh giá trạng thái (Status / Cảnh báo)
+        if (health.is_healthy) {
+            // Cảm biến hoạt động tốt (Good / Healthy)
+            const char *status_str = (g_sys_lang == LANG_VI) ? "Danh gia: TOT (OK)" : "Status  : GOOD (OK)";
+            LCD_DrawString(2, 34, status_str, LCD_COLOR_ON);
+
+            const char *sub_str = (g_sys_lang == LANG_VI) ? "Dien cuc hoat dong tot" : "Sensor working well";
+            LCD_DrawString(2, 43, sub_str, LCD_COLOR_ON);
+        } else {
+            // Cảnh báo cảm biến già / cần vệ sinh điện cực
+            LCD_FillRect(0, 33, 128, 17, LCD_COLOR_ON); // Banner đen nổi bật
+
+            const char *warn1 = (g_sys_lang == LANG_VI) ? "CAN VE SINH DIEN CUC!" : "CLEAN SENSOR / AGING!";
+            const char *warn2 = (g_sys_lang == LANG_VI) ? "Slope <80% hoac |Z|>30mV" : "Slope <80% or |Z|>30mV";
+
+            uint8_t w1 = strlen(warn1) * 6;
+            uint8_t w2 = strlen(warn2) * 6;
+            LCD_DrawString((128 - w1) / 2, 35, warn1, LCD_COLOR_OFF);
+            LCD_DrawString((128 - w2) / 2, 43, warn2, LCD_COLOR_OFF);
+        }
+    }
+
+    // 3. Status bar dưới cùng (ESC)
+    LCD_FillRect(0, STATUS_BAR_Y, 128, STATUS_BAR_H, LCD_COLOR_ON);
+    LCD_DrawString(8, STATUS_BAR_Y + 3, (g_sys_lang == LANG_VI) ? "HUY" : "ESC", LCD_COLOR_OFF);
+    LCD_DrawString(100, STATUS_BAR_Y + 3, (g_sys_lang == LANG_VI) ? "THOAT" : "BACK", LCD_COLOR_OFF);
+
+    LCD_Flush();
+}
+
+static void menu_handle_ph_health_buttons(void)
+{
+    if (btn_edge(BTN_IDX_ESC) || btn_edge(BTN_IDX_ENTER)) {
+        goto_page(PAGE_PH_SETTINGS);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    btn_edge(BTN_IDX_RIGHT);
+    btn_edge(BTN_IDX_UP);
+    btn_edge(BTN_IDX_DOWN);
+}
+
 
 static void menu_render_temp_settings(void)
 {
@@ -2050,7 +2991,50 @@ void menu_handle_buttons(void)
         return;
     }
 
+    /* Xử lý phím riêng cho màn hình Hỏi xác nhận Reset cảm biến */
+    if (g_menu.current_page == PAGE_CONFIRM_RESET) {
+        menu_handle_confirm_reset_buttons();
+        return;
+    }
+
+    /* Xử lý phím riêng cho màn hình Sức khỏe cảm biến pH */
+    if (g_menu.current_page == PAGE_PH_HEALTH) {
+        menu_handle_ph_health_buttons();
+        return;
+    }
+
+    /* Xử lý phím riêng cho màn hình xem lịch sử dữ liệu FRAM */
+    if (g_menu.current_page == PAGE_HISTORY_LOG) {
+        menu_handle_history_log_buttons();
+        return;
+    }
+
+    /* Xử lý phím riêng cho màn hình Quét WiFi */
+    if (g_menu.current_page == PAGE_WIFI_SCAN_LIST) {
+        menu_handle_wifi_scan_list_buttons();
+        return;
+    }
+
+    /* Xử lý phím riêng cho màn hình Nhập Mật Khẩu WiFi (Character Picker) */
+    if (g_menu.current_page == PAGE_WIFI_PASS_ENTRY) {
+        menu_handle_wifi_pass_entry_buttons();
+        return;
+    }
+
+    /* Xử lý phím riêng cho màn hình Trạng Thái WiFi */
+    if (g_menu.current_page == PAGE_WIFI_STATUS) {
+        menu_handle_wifi_status_buttons();
+        return;
+    }
+
+    /* Xử lý phím riêng cho màn hình Thông Tin Thiết Bị */
+    if (g_menu.current_page == PAGE_DEVICE_INFO) {
+        menu_handle_device_info_buttons();
+        return;
+    }
+
     /* ESC – quay lại trang cha */
+
     if (btn_edge(BTN_IDX_ESC)) {
         menu_page_t parent = page->parent;
         if (parent == PAGE_MEASUREMENT) {
@@ -2094,6 +3078,9 @@ void menu_handle_buttons(void)
         if (g_menu.current_page == PAGE_MAIN_MENU &&
             (child == PAGE_MODBUS_SETTINGS || child == PAGE_SENSOR_SETTINGS)) {
             menu_pin_begin_entry(child);
+            g_lcd_need_redraw = true;
+        } else if (child == PAGE_CHANGE_PIN) {
+            menu_pin_begin_entry(PAGE_CHANGE_PIN);
             g_lcd_need_redraw = true;
         } else if (child != PAGE_LEAF && child != PAGE_COUNT) {
             goto_page(child);
@@ -2185,7 +3172,19 @@ static void menu_pin_render(void)
     LCD_Clear();
 
     LCD_FillRect(0, 0, 128, TITLE_BAR_H, LCD_COLOR_ON);
-    if (s_pin_target_page == PAGE_SENSOR_SETTINGS) {
+    if (s_pin_mode == PIN_MODE_CHANGE_OLD) {
+        if (g_sys_lang == LANG_VI) {
+            LCD_DrawString(4, 2, "Nhap Mat Khau Cu", LCD_COLOR_OFF);
+        } else {
+            LCD_DrawString(4, 2, "Enter Old Password", LCD_COLOR_OFF);
+        }
+    } else if (s_pin_mode == PIN_MODE_CHANGE_NEW) {
+        if (g_sys_lang == LANG_VI) {
+            LCD_DrawString(4, 2, "Nhap Mat Khau Moi", LCD_COLOR_OFF);
+        } else {
+            LCD_DrawString(4, 2, "Enter New Password", LCD_COLOR_OFF);
+        }
+    } else if (s_pin_target_page == PAGE_SENSOR_SETTINGS) {
         if (g_sys_lang == LANG_VI) {
             LCD_DrawString(4, 2, "Mat Khau Cam Bien", LCD_COLOR_OFF);
         } else {
@@ -2256,6 +3255,9 @@ static void menu_pin_handle_buttons(void)
     if (btn_edge(BTN_IDX_ESC)) {
         g_menu.in_pin_entry = false;
         s_pin_show_error = false;
+        if (s_pin_mode != PIN_MODE_UNLOCK) {
+            goto_page(PAGE_SYSTEM_SETTINGS);
+        }
         g_lcd_need_redraw = true;
         ESP_LOGI(TAG_MENU, "Huy nhap mat khau");
         return;
@@ -2284,16 +3286,50 @@ static void menu_pin_handle_buttons(void)
     }
 
     if (btn_edge(BTN_IDX_ENTER)) {
-        if (menu_pin_verify()) {
+        if (s_pin_mode == PIN_MODE_CHANGE_OLD) {
+            if (menu_pin_verify()) {
+                s_pin_mode = PIN_MODE_CHANGE_NEW;
+                memset(s_pin_entry, 0, sizeof(s_pin_entry));
+                s_pin_cursor = 0;
+                s_pin_show_error = false;
+                s_pin_reveal = 0;
+                g_lcd_need_redraw = true;
+                ESP_LOGI(TAG_MENU, "Mat khau cu dung -> Chuyen sang nhap mat khau moi");
+            } else {
+                s_pin_show_error = true;
+                g_lcd_need_redraw = true;
+                ESP_LOGW(TAG_MENU, "Mat khau cu sai");
+            }
+        } else if (s_pin_mode == PIN_MODE_CHANGE_NEW) {
+            char new_pin[MENU_PIN_LEN + 1];
+            for (uint8_t i = 0; i < MENU_PIN_LEN; i++) {
+                new_pin[i] = (char)('0' + s_pin_entry[i]);
+            }
+            new_pin[MENU_PIN_LEN] = '\0';
+
+            memcpy(s_menu_pin_stored, new_pin, MENU_PIN_LEN + 1);
+            Nvs_Write_String("menu_pin", s_menu_pin_stored);
+            ESP_LOGI(TAG_MENU, "Da luu mat khau moi NVS: %s", s_menu_pin_stored);
+
             g_menu.in_pin_entry = false;
             s_pin_show_error = false;
-            goto_page(s_pin_target_page);
+
+            menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Mat Khau" : "Password",
+                                   g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
+            goto_page(PAGE_SYSTEM_SETTINGS);
             g_lcd_need_redraw = true;
-            ESP_LOGI(TAG_MENU, "Mat khau dung -> vao menu %d", (int)s_pin_target_page);
         } else {
-            s_pin_show_error = true;
-            g_lcd_need_redraw = true;
-            ESP_LOGW(TAG_MENU, "Mat khau sai");
+            if (menu_pin_verify()) {
+                g_menu.in_pin_entry = false;
+                s_pin_show_error = false;
+                goto_page(s_pin_target_page);
+                g_lcd_need_redraw = true;
+                ESP_LOGI(TAG_MENU, "Mat khau dung -> vao menu %d", (int)s_pin_target_page);
+            } else {
+                s_pin_show_error = true;
+                g_lcd_need_redraw = true;
+                ESP_LOGW(TAG_MENU, "Mat khau sai");
+            }
         }
     }
 }
@@ -2416,7 +3452,22 @@ void menu_render(void)
         menu_render_cal_do_exec();
     } else if (g_menu.current_page == PAGE_CAL_DO_TEMP) {
         menu_render_cal_do_temp();
+    } else if (g_menu.current_page == PAGE_CONFIRM_RESET) {
+        menu_render_confirm_reset();
+    } else if (g_menu.current_page == PAGE_HISTORY_LOG) {
+        menu_render_history_log();
+    } else if (g_menu.current_page == PAGE_WIFI_SCAN_LIST) {
+        menu_render_wifi_scan_list();
+    } else if (g_menu.current_page == PAGE_WIFI_PASS_ENTRY) {
+        menu_render_wifi_pass_entry();
+    } else if (g_menu.current_page == PAGE_WIFI_STATUS) {
+        menu_render_wifi_status();
+    } else if (g_menu.current_page == PAGE_DEVICE_INFO) {
+        menu_render_device_info();
+    } else if (g_menu.current_page == PAGE_PH_HEALTH) {
+        menu_render_ph_health();
     } else {
+
         /* ── 2. Danh sách mục (y=13..48) ── */
         uint8_t visible = page->item_count - g_menu.scroll_offset;
         if (visible > VISIBLE_ITEMS) visible = VISIBLE_ITEMS;
@@ -2487,7 +3538,6 @@ void menu_render(void)
                 LCD_FillRect(0, y, 128, ITEM_ROW_H, LCD_COLOR_ON);
 
                 // 1. Tính độ rộng thực tế của tên mục (mỗi ký tự rộng 6px)
-                const char *item_str = page->items[idx];
                 int16_t scroll_x = 0;
                 uint16_t text_w = strlen(item_str) * 6;
                 uint16_t view_w = 120 - 4; // Độ rộng khung hiển thị tối đa là 116px (khoảng 19 ký tự)
@@ -2524,7 +3574,7 @@ void menu_render(void)
                 }
             } else {
                 /* Mục bình thường: nền trắng, chữ đen, xén lề tối đa 120px */
-                LCD_DrawStringScroll(4, y + 1, page->items[idx], 120, 0, LCD_COLOR_ON);
+                LCD_DrawStringScroll(4, y + 1, item_str, 120, 0, LCD_COLOR_ON);
                 if (is_active_choice) {
                     LCD_DrawChar(112, y + 1, '*', LCD_COLOR_ON);
                 }

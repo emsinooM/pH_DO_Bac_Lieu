@@ -39,7 +39,7 @@ static httpd_handle_t start_webserver(void)
 
     config.lru_purge_enable = true;
     config.max_open_sockets = 5;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 25;
 
     ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
     esp_err_t start_err = httpd_start(&server, &config);
@@ -60,6 +60,7 @@ static httpd_handle_t start_webserver(void)
 void User_Http_Server_Task(void)
 {
     ESP_LOGI("HTTP SERVER: ", "Start http server task");
+    terminal_log_init();
     start_webserver();
 
     while(1)

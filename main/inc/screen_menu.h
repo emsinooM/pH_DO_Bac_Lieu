@@ -104,9 +104,11 @@ typedef enum {
     PAGE_SCREEN_SETTINGS,
     PAGE_SCREEN_CONTRAST,
     PAGE_SCREEN_RES_RATIO,
+    PAGE_CHANGE_PIN,
 
     /* Level 3 – Sensor Settings */
     PAGE_PH_SETTINGS,
+    PAGE_PH_HEALTH,
     PAGE_DO_SETTINGS,
     PAGE_CALIBRATION,
     PAGE_CAL_2PT,
@@ -118,6 +120,7 @@ typedef enum {
     PAGE_CAL_DO_EXEC,
     PAGE_CAL_DO_TEMP,
     PAGE_RESET_SENSOR,
+    PAGE_CONFIRM_RESET,
     PAGE_DIGITAL_FILTER,
     PAGE_TEMP_MODE,
     PAGE_TEMP_SETTINGS,
@@ -131,8 +134,18 @@ typedef enum {
     PAGE_MODBUS_SELECT_PARITY,
     PAGE_MODBUS_SELECT_STOP,
 
+    /* Level 2/3 – WiFi Settings */
+    PAGE_WIFI_SETTINGS,
+    PAGE_WIFI_SCAN_LIST,
+    PAGE_WIFI_PASS_ENTRY,
+    PAGE_WIFI_STATUS,
+
+    /* Level 2 – Device Info */
+    PAGE_DEVICE_INFO,
+
     PAGE_LEAF,              /**< Mục lá – không có trang con   */
     PAGE_COUNT
+
 } menu_page_t;
 
 /* =====================================================================
