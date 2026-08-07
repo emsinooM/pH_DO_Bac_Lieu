@@ -63,6 +63,8 @@ typedef struct {
     float temperature;      // Giá trị nhiệt độ hiện tại (C)
     float v_probe_mv;       // Điện áp đo được từ đầu dò (mV)
     bool is_calibrated;     // Đã được hiệu chuẩn hay chưa
+    bool ph_valid;          // Trạng thái dữ liệu pH hợp lệ (0 <= pH <= 14)
+    bool temp_valid;        // Trạng thái dữ liệu nhiệt độ hợp lệ (0 <= Temp <= 60 C cho ATC)
     
     // Các tham số hiệu chuẩn hiện tại
     float ph7_voltage_mv;
@@ -86,26 +88,16 @@ void update_ph_calibration(PhCalibration_t *cal);
 float calculate_temperature(int32_t raw_adc, bool is_pt1000);
 
 // Tính toán pH bù nhiệt (ATC) kết hợp dữ liệu hiệu chuẩn thực tế 2 điểm
-float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, float temp_c, float *out_v_probe_mv);
+float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, float temp_c, float *out_v_probe_mv, bool *out_ph_valid);
 
 // --- Các API Toàn cục mới phục vụ Web Server & Azure ---
+void ph_temp_init(void);
 PH_Temp_Sensor_Status_t Get_Sensor_Status(void);
-void Update_Sensor_Measurements(float ph, float temp, float v_probe_mv);
+void Update_Sensor_Measurements(float ph, bool ph_valid, float temp, bool temp_valid, float v_probe_mv);
 void Update_DO_Sensor_Measurements(float do_mg_l, float do_temp_c, float do_saturation_pct, bool do_valid, int do_error_code);
 bool Load_Calibration_From_Storage(void);
 bool Save_Calibration_To_Storage(const PhCalibration_t *cal);
 bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_c, uint8_t cal_type);
 bool Reset_PH_Calibration(void);
-
-// --- Cấu trúc chẩn đoán Sức khỏe Cảm biến pH ---
-typedef struct {
-    float slope_pct;       // Độ nhạy chuẩn hóa % so với Nernst (ví dụ 97.5%)
-    float zero_offset_mv;  // Điểm lệch 0 tại pH 7.00 (mV) (ví dụ -12.0 mV)
-    float sens_mv_per_ph;  // Độ dốc tính bằng mV/pH ở 25C (ví dụ 57.68 mV/pH)
-    bool  is_calibrated;   // Trạng thái đã hiệu chuẩn thực tế hay chưa
-    bool  is_healthy;      // true nếu Slope >= 80% và |Zero| <= 30mV
-} PhSensorHealth_t;
-
-PhSensorHealth_t Get_PH_Sensor_Health(void);
 
 #endif // PH_TEMP_H
