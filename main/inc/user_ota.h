@@ -30,5 +30,6 @@ const char* User_Ota_Get_Status_String(void);
 void User_Ota_Task(void *pvParameters);
 esp_err_t update_firmware(const char *updateFileName);
 void User_Ota_Trigger(const char *url);
+bool User_Ota_Check_And_Run_Pending(void);
 
 

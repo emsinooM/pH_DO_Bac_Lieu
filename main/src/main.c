@@ -16,6 +16,7 @@
 #include "user_http_server.h"
 #include "user_system.h"
 #include "user_time.h"
+#include "user_ota.h"
 #include "wifi_config_manager.h"
 #include <stdlib.h>
 #include <sys/time.h>
@@ -169,7 +170,7 @@ static void ph_temp_sensor_task(void *pvParameters) {
     // CODE MÔ PHỎNG SENSOR (TỰ ĐỘNG THAY ĐỔI 5 GIÁ TRỊ BAO GỒM CẢ CÁC GIÁ TRỊ LỖI)
     // Để chuyển sang chạy thực tế: Đổi '#if 1' bên dưới thành '#if 0' hoặc comment lại toàn bộ khối này
     // =========================================================================
-#if 1
+#if 0
     /* Chuỗi mô phỏng 5 bước: 
      * Bước 0: pH=7.00 (OK), Temp=28.5C (OK)
      * Bước 1: pH=-1.50 (LỖI -> N/A), Temp=-15.0C (LỖI -> N/A)
@@ -177,8 +178,8 @@ static void ph_temp_sensor_task(void *pvParameters) {
      * Bước 3: pH=15.20 (LỖI -> N/A), Temp=85.0C (LỖI -> N/A)
      * Bước 4: pH=3.45 (OK), Temp=25.3C (OK)
      */
-    static const float s_sim_ph[5]   = { 7.50f,  6.20f,  8.10f,  9.40f,  7.80f };
-    static const float s_sim_temp[5] = {29.50f, 25.00f, 30.20f, 38.50f, 28.80f };
+    static const float s_sim_ph[5]   = { 7.50f,  7.51f,  7.52f,  7.53f,  7.54f };
+    static const float s_sim_temp[5] = {30.30f, 30.10f, 30.20f, 30.40f, 30.20f };
 
     static size_t s_sim_idx = 0;
 
@@ -235,6 +236,10 @@ static void system_startup_task(void *pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
   vTaskDelay(pdMS_TO_TICKS(2000));
+
+  // --- KÍCH HOẠT REBOOT-TO-OTA (NẾU CÓ ĐƠN HÀNG OTA PENDING TRONG NVS) ---
+  // Tiến hành nạp Firmware ngay khi vừa có Wi-Fi, RAM trống tuyệt đối (chưa khởi tạo Azure / NTP)
+  User_Ota_Check_And_Run_Pending();
 
   // --- Tạo Time Task (Đồng bộ thời gian NTP) ---
   if (xTaskCreatePinnedToCore((TaskFunction_t)User_Time_Task, "Time_Task", 4096,
@@ -359,8 +364,9 @@ void app_main(void) {
   }
 
   // --- Khởi chạy tiến trình khởi tạo mạng tuần tự ---
-  xTaskCreatePinnedToCore(system_startup_task, "system_startup_task", 4096,
+  xTaskCreatePinnedToCore(system_startup_task, "system_startup_task", 9216,
                           NULL, 5, NULL, 0);
+
 
   // --- Khởi chạy task đọc cảm biến pH & Nhiệt độ (CS1237) ---
   xTaskCreatePinnedToCore(ph_temp_sensor_task, "ph_temp_sensor_task", 4096,

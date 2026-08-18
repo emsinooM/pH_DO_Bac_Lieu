@@ -21,8 +21,89 @@
 #include "ds3231.h"
 #include "filter.h"
 #include "user_storage.h"
+#include <stdarg.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 static const char *PORTAL_TAG = "web_portal";
+
+#define WEB_LOG_BUFFER_SIZE (16 * 1024)
+static char *g_web_log_buf = NULL;
+static size_t g_web_log_head = 0;
+static size_t g_web_log_count = 0;
+static portMUX_TYPE g_web_log_spinlock = portMUX_INITIALIZER_UNLOCKED;
+static vprintf_like_t g_default_vprintf_func = NULL;
+static bool g_web_log_inited = false;
+
+static int web_log_vprintf(const char *fmt, va_list args) {
+  int ret = 0;
+  if (g_default_vprintf_func) {
+    va_list args_copy;
+    va_copy(args_copy, args);
+    ret = g_default_vprintf_func(fmt, args_copy);
+    va_end(args_copy);
+  } else {
+    ret = vprintf(fmt, args);
+  }
+
+  if (xPortInIsrContext() || !g_web_log_inited) {
+    return ret;
+  }
+
+  static __thread bool s_in_log_hook = false;
+  if (s_in_log_hook) {
+    return ret;
+  }
+  s_in_log_hook = true;
+
+  static char temp_buf[256];
+  va_list args_copy2;
+  va_copy(args_copy2, args);
+  int len = vsnprintf(temp_buf, sizeof(temp_buf), fmt, args_copy2);
+  va_end(args_copy2);
+
+  if (len > 0) {
+    if (g_web_log_buf == NULL) {
+      g_web_log_buf = (char *)malloc(WEB_LOG_BUFFER_SIZE);
+    }
+    if (g_web_log_buf != NULL) {
+      size_t copy_len = (len < (int)sizeof(temp_buf)) ? (size_t)len : (sizeof(temp_buf) - 1);
+      portENTER_CRITICAL(&g_web_log_spinlock);
+      for (size_t i = 0; i < copy_len; i++) {
+        char c = temp_buf[i];
+        if (c != '\0') {
+          g_web_log_buf[g_web_log_head] = c;
+          g_web_log_head = (g_web_log_head + 1) % WEB_LOG_BUFFER_SIZE;
+          if (g_web_log_count < WEB_LOG_BUFFER_SIZE) {
+            g_web_log_count++;
+          }
+        }
+      }
+      portEXIT_CRITICAL(&g_web_log_spinlock);
+    }
+  }
+
+  s_in_log_hook = false;
+  return ret;
+}
+
+void terminal_log_init(void) {
+  if (!g_web_log_inited) {
+    if (g_web_log_buf == NULL) {
+      g_web_log_buf = (char *)malloc(WEB_LOG_BUFFER_SIZE);
+    }
+    if (g_web_log_buf != NULL) {
+      memset(g_web_log_buf, 0, WEB_LOG_BUFFER_SIZE);
+    }
+    g_web_log_head = 0;
+    g_web_log_count = 0;
+    g_web_log_inited = true;
+    if (g_default_vprintf_func == NULL) {
+      g_default_vprintf_func = esp_log_set_vprintf(web_log_vprintf);
+    }
+    ESP_LOGI(PORTAL_TAG, "Web Log Vprintf hook initialized (16KB Buffer)");
+  }
+}
 
 static const char *login_html =
     "<!DOCTYPE html><html><head><meta charset='utf-8'/>"
@@ -298,6 +379,10 @@ static const char *portal_html =
     "Update</li>"
     "    <li class='nav-item' onclick='switchTab(\"lcd\", event)'>🖥️ LCD "
     "Screen</li>"
+    "    <li class='nav-item' onclick='switchTab(\"fakedata\", event)'>🧪 Fake "
+    "Data</li>"
+    "    <li class='nav-item' onclick='switchTab(\"log\", event)'>🖥️ Terminal "
+    "Logs</li>"
     "  </ul>"
     "  <div class='sidebar-footer'>"
     "    <button id='theme_btn' onclick='toggleTheme()' "
@@ -632,6 +717,142 @@ static const char *portal_html =
     "        </div>"
     "      </div>"
     "    </div>"
+    "    <div class='tab-panel' id='tab-fakedata'>"
+    "      <div class='card'>"
+    "        <div class='section-title'>🧪 Fake Telemetry Data Generator</div>"
+    "        <div style='margin-bottom:16px;font-size:13px;color:var(--text-muted);text-align:left;'>"
+    "          Tùy chỉnh thông số dữ liệu giả và bắn Telemetry lên hệ thống (Azure IoT Hub). Các thông số đã có sẵn giá trị mặc định."
+    "        </div>"
+    "        <div style='display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;'>"
+    "          <button type='button' class='btn-secondary' onclick='loadRealDataToFakeForm()' style='width:auto;padding:8px 14px;font-size:13px;margin:0;'>🔄 Lấy từ cảm biến thực</button>"
+    "          <button type='button' class='btn-secondary' onclick='resetFakeFormDefaults()' style='width:auto;padding:8px 14px;font-size:13px;margin:0;background:var(--text-muted);'>↩️ Đặt lại mặc định</button>"
+    "        </div>"
+    "        <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;'>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Host Name</label>"
+    "            <input id='fake_host_name' value='dev-iot-hub.azure-devices.net' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Device ID</label>"
+    "            <input id='fake_dev_id' value='my-device-1' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "        </div>"
+    "        <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;'>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Message Code</label>"
+    "            <input id='fake_code' type='number' value='504' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>TimeStamp (Epoch)</label>"
+    "            <div style='display:flex;align-items:center;gap:8px;margin-top:8px;'>"
+    "              <input id='fake_timestamp' type='number' placeholder='Auto current time' style='margin-top:0;flex:1;' oninput='updateFakeJsonPreview()'/>"
+    "              <label style='margin:0;white-space:nowrap;font-size:12px;'><input id='fake_auto_ts' type='checkbox' checked onchange='updateFakeJsonPreview()' style='width:auto;margin:0 4px 0 0;'/> Tự động</label>"
+    "            </div>"
+    "          </div>"
+    "        </div>"
+    "        <hr style='border-top:1px dashed var(--border);margin:16px 0;border-bottom:none;'>"
+    "        <div style='font-weight:700;font-size:15px;margin-bottom:12px;color:var(--primary);'>📊 Sensor Values (Số liệu cảm biến)</div>"
+    "        <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;'>"
+    "          <div>"
+    "            <label style='margin-top:0;'>pH (ATC)</label>"
+    "            <input id='fake_ph' type='number' step='0.01' value='7.00' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Nhiệt độ pH (°C)</label>"
+    "            <input id='fake_ph_temp' type='number' step='0.1' value='25.0' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Oxy hòa tan DO (mg/L)</label>"
+    "            <input id='fake_do' type='number' step='0.01' value='6.80' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Nhiệt độ DO (°C)</label>"
+    "            <input id='fake_do_temp' type='number' step='0.1' value='25.0' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Độ bão hòa DO (%)</label>"
+    "            <input id='fake_do_sat' type='number' step='0.1' value='95.0' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Điện áp Probe (mV)</label>"
+    "            <input id='fake_v_probe' type='number' step='0.01' value='0.00' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>WiFi RSSI (dBm)</label>"
+    "            <input id='fake_rssi' type='number' value='-65' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Uptime (giây)</label>"
+    "            <input id='fake_uptime' type='number' value='1000' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Free RAM (Bytes)</label>"
+    "            <input id='fake_free_ram' type='number' value='180000' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>DO Error Code</label>"
+    "            <input id='fake_do_err' type='number' value='0' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>Firmware Version</label>"
+    "            <input id='fake_ver' value='1.0.0' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div>"
+    "            <label style='margin-top:0;'>OTA Partition</label>"
+    "            <input id='fake_ota_part' value='ota_0' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "          <div style='grid-column:span 2;'>"
+    "            <label style='margin-top:0;'>Reset Reason</label>"
+    "            <input id='fake_reset_reason' value='Power-on Reset' oninput='updateFakeJsonPreview()'/>"
+    "          </div>"
+    "        </div>"
+    "        <hr style='border-top:1px dashed var(--border);margin:16px 0;border-bottom:none;'>"
+    "        <div style='font-weight:700;font-size:15px;margin-bottom:12px;color:var(--primary);'>🔘 Binary / Boolean Status (Trạng thái logic)</div>"
+    "        <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;background:rgba(59,130,246,0.05);padding:12px;border-radius:10px;border:1px solid var(--border);'>"
+    "          <label style='margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;'>"
+    "            <input id='fake_valid' type='checkbox' checked onchange='updateFakeJsonPreview()' style='width:20px;height:20px;margin:0;'/>"
+    "            <span><strong>Valid (pH Calibrated)</strong></span>"
+    "          </label>"
+    "          <label style='margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;'>"
+    "            <input id='fake_do_valid' type='checkbox' checked onchange='updateFakeJsonPreview()' style='width:20px;height:20px;margin:0;'/>"
+    "            <span><strong>do_valid (DO Valid)</strong></span>"
+    "          </label>"
+    "        </div>"
+    "        <hr style='border-top:1px dashed var(--border);margin:16px 0;border-bottom:none;'>"
+    "        <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;'>"
+    "          <label style='margin:0;font-weight:700;'>📝 Telemetry JSON Preview</label>"
+    "          <button type='button' class='btn-secondary' onclick='updateFakeJsonPreview()' style='width:auto;padding:4px 10px;font-size:12px;margin:0;'>Cập nhật JSON</button>"
+    "        </div>"
+    "        <textarea id='fake_json_preview' rows='12' style='font-family:monospace;font-size:12px;background:var(--input-bg);color:var(--input-text);'></textarea>"
+    "        <div class='btn-group' style='margin-top:20px;'>"
+    "          <button id='btn_push_fake' class='btn-primary' onclick='pushFakeTelemetry()' style='padding:14px;font-size:16px;'>🚀 Push Telemetry</button>"
+    "        </div>"
+    "        <div style='margin-top:12px;font-size:13px;color:var(--text-muted);text-align:center;'>"
+    "          ⏱️ Lần bắn gần nhất: <span id='fake_last_push_time' style='font-weight:bold;color:#3b82f6;'>Chưa bắn</span>"
+    "        </div>"
+    "      </div>"
+    "    </div>"
+    "    <div class='tab-panel' id='tab-log'>"
+    "      <div class='card' style='max-width:100%;'>"
+    "        <div class='section-title' style='justify-content:space-between;flex-wrap:wrap;'>"
+    "          <span>🖥️ Real-time System Terminal Log (UART)</span>"
+    "          <span id='log_status_badge' style='font-size:12px;padding:4px 12px;border-radius:20px;background:#10b981;color:#fff;font-weight:700;'>● LIVE</span>"
+    "        </div>"
+    "        <div style='display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;justify-content:space-between;'>"
+    "          <div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>"
+    "            <button id='btn_log_pause' class='btn-secondary' onclick='toggleLogPause()' style='width:auto;padding:8px 16px;font-size:13px;'>⏸ Pause</button>"
+    "            <button class='btn-danger' onclick='clearLogDisplay()' style='width:auto;padding:8px 16px;font-size:13px;'>🗑️ Clear</button>"
+    "            <button class='btn-primary' onclick='downloadLog()' style='width:auto;padding:8px 16px;font-size:13px;'>📥 Download Log</button>"
+    "          </div>"
+    "          <label style='margin:0;font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text);'>"
+    "            <input type='checkbox' id='log_autoscroll' checked style='width:auto;margin:0;'/> Auto-scroll"
+    "          </label>"
+    "        </div>"
+    "        <div id='terminal_view' style='background:#090d16;color:#e2e8f0;font-family:Consolas,Monaco,monospace;font-size:12px;line-height:1.4;border-radius:12px;padding:16px;height:480px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border:1px solid var(--border);box-shadow:inset 0 2px 8px rgba(0,0,0,0.4);text-align:left;'>"
+    "          <div style='color:#64748b;font-style:italic;'>Connecting to ESP32 Terminal Log stream...</div>"
+    "        </div>"
+    "      </div>"
+    "    </div>"
     "    <div id='msg'></div>"
     "  </div>"
     "</div>"
@@ -749,12 +970,84 @@ static const char *portal_html =
     "document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('"
     "active'));"
     "document.getElementById('tab-'+tabId).classList.add('active');"
+    "if(tabId==='fakedata') updateFakeJsonPreview();"
+    "if(tabId==='log'){"
+    "fetchTerminalLog();"
+    "if(!logPollTimer) logPollTimer=setInterval(fetchTerminalLog,1000);"
+    "}else{"
+    "if(logPollTimer){clearInterval(logPollTimer);logPollTimer=null;}"
+    "}"
     "const sb=document.getElementById('sidebar');"
     "const ov=document.getElementById('sidebar_overlay');"
     "if(sb.classList.contains('open')){"
     "sb.classList.remove('open');"
     "ov.classList.remove('open');"
     "}"
+    "}"
+    "let isLogPaused=false;"
+    "let logPollTimer=null;"
+    "function toggleLogPause(){"
+    "isLogPaused=!isLogPaused;"
+    "const btn=document.getElementById('btn_log_pause');"
+    "const badge=document.getElementById('log_status_badge');"
+    "if(isLogPaused){"
+    "if(btn){btn.innerText='▶ Resume';btn.style.background='#f59e0b';}"
+    "if(badge){badge.innerText='⏸ PAUSED';badge.style.background='#f59e0b';}"
+    "}else{"
+    "if(btn){btn.innerText='⏸ Pause';btn.style.background='var(--primary)';}"
+    "if(badge){badge.innerText='● LIVE';badge.style.background='#10b981';}"
+    "fetchTerminalLog();"
+    "}"
+    "}"
+    "function clearLogDisplay(){"
+    "const tv=document.getElementById('terminal_view');"
+    "if(tv) tv.innerText='';"
+    "}"
+    "function downloadLog(){"
+    "const tv=document.getElementById('terminal_view');"
+    "if(!tv) return;"
+    "const blob=new Blob([tv.innerText],{type:'text/plain;charset=utf-8'});"
+    "const a=document.createElement('a');"
+    "a.href=URL.createObjectURL(blob);"
+    "a.download='esp32_terminal_log_'+(new Date().toISOString().replace(/[:.]/g,'-'))+'.txt';"
+    "a.click();"
+    "}"
+    "function colorizeLogText(text){"
+    "if(!text) return '';"
+    "const lines=text.split(String.fromCharCode(10));"
+    "return lines.map(line=>{"
+    "let esc=line.replace(/\\033\\[[0-9;]*m/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');"
+    "if(esc.includes(' I (')||esc.includes('I (')){"
+    "return '<span style=\"color:#4ade80;\">'+esc+'</span>';"
+    "}else if(esc.includes(' W (')||esc.includes('W (')){"
+    "return '<span style=\"color:#facc15;\">'+esc+'</span>';"
+    "}else if(esc.includes(' E (')||esc.includes('E (')){"
+    "return '<span style=\"color:#f87171;font-weight:bold;\">'+esc+'</span>';"
+    "}else if(esc.includes(' D (')||esc.includes('D (')){"
+    "return '<span style=\"color:#38bdf8;\">'+esc+'</span>';"
+    "}"
+    "return '<span>'+esc+'</span>';"
+    "}).join(String.fromCharCode(10));"
+    "}"
+    "function fetchTerminalLog(){"
+    "if(isLogPaused) return;"
+    "const tv=document.getElementById('terminal_view');"
+    "if(!tv) return;"
+    "fetch('/api/terminal_log')"
+    ".then(r=>{"
+    "if(r.status===401) window.location.reload();"
+    "return r.text();"
+    "})"
+    ".then(txt=>{"
+    "const autoScroll=document.getElementById('log_autoscroll')?.checked;"
+    "if(!txt||txt.trim()===''){"
+    "tv.innerHTML='<div style=\"color:#64748b;font-style:italic;\">No log messages captured yet...</div>';"
+    "}else{"
+    "tv.innerHTML=colorizeLogText(txt);"
+    "}"
+    "if(autoScroll) tv.scrollTop=tv.scrollHeight;"
+    "})"
+    ".catch(()=>{});"
     "}"
     "function toggleMobileSidebar(){"
     "document.getElementById('sidebar').classList.toggle('open');"
@@ -916,6 +1209,17 @@ static const char *portal_html =
     "const az=document.getElementById('dash_az_status');"
     "az.innerText=d.azure.initialized?'Connected':'Disconnected';"
     "az.style.color=d.azure.initialized?'#10b981':'#ef4444';"
+    "if(d.azure){"
+    "window.last_system_azure=d.azure;"
+    "if(!window.fake_host_initialized&&d.azure.host&&d.azure.device_id){"
+    "window.fake_host_initialized=true;"
+    "const hEl=document.getElementById('fake_host_name');"
+    "const dEl=document.getElementById('fake_dev_id');"
+    "if(hEl&&(hEl.value==='dev-iot-hub.azure-devices.net'||!hEl.value)) hEl.value=d.azure.host;"
+    "if(dEl&&(dEl.value==='my-device-1'||!dEl.value)) dEl.value=d.azure.device_id;"
+    "updateFakeJsonPreview();"
+    "}"
+    "}"
     "const phVal=Number(d.sensor.ph).toFixed(2);"
     "const tempVal=Number(d.sensor.temp).toFixed(1);"
     "const vProbeVal=Number(d.sensor.v_probe_mv).toFixed(2);"
@@ -1197,7 +1501,142 @@ static const char *portal_html =
     "else if(e.key==='Escape'){simulateBtn('esc');e.preventDefault();}"
     "else if(e.key==='Enter'){simulateBtn('enter');e.preventDefault();}"
     "});"
+    "function updateFakeJsonPreview(){"
+    "const host=document.getElementById('fake_host_name').value||'dev-iot-hub.azure-devices.net';"
+    "const dev=document.getElementById('fake_dev_id').value||'my-device-1';"
+    "const code=parseInt(document.getElementById('fake_code').value)||504;"
+    "const autoTs=document.getElementById('fake_auto_ts').checked;"
+    "let ts=parseInt(document.getElementById('fake_timestamp').value);"
+    "if(autoTs||isNaN(ts)) ts=Math.floor(Date.now()/1000);"
+    "const ph=parseFloat(document.getElementById('fake_ph').value)||0.0;"
+    "const ph_temp=parseFloat(document.getElementById('fake_ph_temp').value)||0.0;"
+    "const do_val=parseFloat(document.getElementById('fake_do').value)||0.0;"
+    "const temp=parseFloat(document.getElementById('fake_do_temp').value)||0.0;"
+    "const do_sat=parseFloat(document.getElementById('fake_do_sat').value)||0.0;"
+    "const v_probe_mv=parseFloat(document.getElementById('fake_v_probe').value)||0.0;"
+    "const rssi=parseInt(document.getElementById('fake_rssi').value)||-65;"
+    "const uptime=parseInt(document.getElementById('fake_uptime').value)||0;"
+    "const free_ram=parseInt(document.getElementById('fake_free_ram').value)||0;"
+    "const do_err=parseInt(document.getElementById('fake_do_err').value)||0;"
+    "const ver=document.getElementById('fake_ver').value||'1.0.0';"
+    "const ota_part=document.getElementById('fake_ota_part').value||'ota_0';"
+    "const reset_reason=document.getElementById('fake_reset_reason').value||'Power-on Reset';"
+    "const valid=document.getElementById('fake_valid').checked;"
+    "const do_valid=document.getElementById('fake_do_valid').checked;"
+    "const payloadObj={"
+    "payload:{"
+    "HostName:host,"
+    "DeviceId:dev,"
+    "Code:code,"
+    "TimeStamp:ts,"
+    "SensorData:{"
+    "ph:ph,"
+    "ph_temp:ph_temp,"
+    "Valid:valid,"
+    "do:do_val,"
+    "temp:temp,"
+    "do_sat:do_sat,"
+    "do_valid:do_valid,"
+    "rssi:rssi,"
+    "uptime:uptime,"
+    "reset_reason:reset_reason,"
+    "free_ram:free_ram,"
+    "v_probe_mv:v_probe_mv,"
+    "do_err:do_err,"
+    "ver:ver,"
+    "ota_part:ota_part"
+    "}"
+    "}"
+    "};"
+    "const el=document.getElementById('fake_json_preview');"
+    "if(el) el.value=JSON.stringify(payloadObj,null,2);"
+    "}"
+    "function resetFakeFormDefaults(){"
+    "const defaultHost=(window.last_system_azure&&window.last_system_azure.host)?window.last_system_azure.host:'dev-iot-hub.azure-devices.net';"
+    "const defaultDev=(window.last_system_azure&&window.last_system_azure.device_id)?window.last_system_azure.device_id:'my-device-1';"
+    "document.getElementById('fake_host_name').value=defaultHost;"
+    "document.getElementById('fake_dev_id').value=defaultDev;"
+    "document.getElementById('fake_code').value=504;"
+    "document.getElementById('fake_auto_ts').checked=true;"
+    "document.getElementById('fake_timestamp').value='';"
+    "document.getElementById('fake_ph').value=7.00;"
+    "document.getElementById('fake_ph_temp').value=25.0;"
+    "document.getElementById('fake_do').value=6.80;"
+    "document.getElementById('fake_do_temp').value=25.0;"
+    "document.getElementById('fake_do_sat').value=95.0;"
+    "document.getElementById('fake_v_probe').value=0.00;"
+    "document.getElementById('fake_rssi').value=-65;"
+    "document.getElementById('fake_uptime').value=1000;"
+    "document.getElementById('fake_free_ram').value=180000;"
+    "document.getElementById('fake_do_err').value=0;"
+    "document.getElementById('fake_ver').value='1.0.0';"
+    "document.getElementById('fake_ota_part').value='ota_0';"
+    "document.getElementById('fake_reset_reason').value='Power-on Reset';"
+    "document.getElementById('fake_valid').checked=true;"
+    "document.getElementById('fake_do_valid').checked=true;"
+    "updateFakeJsonPreview();"
+    "showToast('Đã khôi phục giá trị mặc định!',true);"
+    "}"
+    "function loadRealDataToFakeForm(){"
+    "fetch('/api/system_status').then(r=>r.json()).then(d=>{"
+    "if(d.azure&&d.azure.host) document.getElementById('fake_host_name').value=d.azure.host;"
+    "if(d.azure&&d.azure.device_id) document.getElementById('fake_dev_id').value=d.azure.device_id;"
+    "if(d.sensor){"
+    "if(d.sensor.ph!==undefined) document.getElementById('fake_ph').value=Number(d.sensor.ph).toFixed(2);"
+    "if(d.sensor.temp!==undefined) document.getElementById('fake_ph_temp').value=Number(d.sensor.temp).toFixed(1);"
+    "if(d.sensor.do_mg_l!==undefined) document.getElementById('fake_do').value=Number(d.sensor.do_mg_l).toFixed(2);"
+    "if(d.sensor.do_temp_c!==undefined) document.getElementById('fake_do_temp').value=Number(d.sensor.do_temp_c).toFixed(1);"
+    "if(d.sensor.do_saturation_pct!==undefined) document.getElementById('fake_do_sat').value=Number(d.sensor.do_saturation_pct).toFixed(1);"
+    "if(d.sensor.v_probe_mv!==undefined) document.getElementById('fake_v_probe').value=Number(d.sensor.v_probe_mv).toFixed(2);"
+    "if(d.sensor.do_error_code!==undefined) document.getElementById('fake_do_err').value=d.sensor.do_error_code;"
+    "if(d.sensor.is_calibrated!==undefined) document.getElementById('fake_valid').checked=d.sensor.is_calibrated;"
+    "if(d.sensor.do_valid!==undefined) document.getElementById('fake_do_valid').checked=d.sensor.do_valid;"
+    "}"
+    "if(d.wifi&&d.wifi.rssi!==undefined) document.getElementById('fake_rssi').value=d.wifi.rssi;"
+    "if(d.system){"
+    "if(d.system.uptime!==undefined) document.getElementById('fake_uptime').value=d.system.uptime;"
+    "if(d.system.free_heap!==undefined) document.getElementById('fake_free_ram').value=d.system.free_heap;"
+    "if(d.system.version) document.getElementById('fake_ver').value=d.system.version;"
+    "if(d.system.partition) document.getElementById('fake_ota_part').value=d.system.partition;"
+    "if(d.system.reset_reason) document.getElementById('fake_reset_reason').value=d.system.reset_reason;"
+    "}"
+    "updateFakeJsonPreview();"
+    "showToast('Đã nạp dữ liệu từ cảm biến thực!',true);"
+    "}).catch(()=>showToast('Lỗi nạp dữ liệu thực!',false));"
+    "}"
+    "function pushFakeTelemetry(){"
+    "const previewText=document.getElementById('fake_json_preview').value.trim();"
+    "let payloadObj;"
+    "try{"
+    "payloadObj=JSON.parse(previewText);"
+    "}catch(e){"
+    "showToast('JSON không hợp lệ! Vui lòng kiểm tra lại.',false);"
+    "return;"
+    "}"
+    "const btn=document.getElementById('btn_push_fake');"
+    "setLoading(btn,true,'Đang bắn...');"
+    "fetch('/api/push_fake_telemetry',{"
+    "method:'POST',"
+    "headers:{'Content-Type':'application/json'},"
+    "body:JSON.stringify({payload:JSON.stringify(payloadObj)})"
+    "})"
+    ".then(r=>r.json())"
+    ".then(d=>{"
+    "showToast(d.message||'Thành công!',d.success);"
+    "if(d.success){"
+    "const now=new Date();"
+    "const pad=(n)=>String(n).padStart(2,'0');"
+    "const timeStr=pad(now.getDate())+'/'+pad(now.getMonth()+1)+'/'+now.getFullYear()+' '+pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds())+' (Epoch: '+Math.floor(now.getTime()/1000)+')';"
+    "const el=document.getElementById('fake_last_push_time');"
+    "if(el){el.innerText=timeStr;el.style.color='#10b981';}"
+    "}"
+    "updateDashboard();"
+    "})"
+    ".catch(()=>showToast('Không thể kết nối thiết bị!',false))"
+    ".finally(()=>setLoading(btn,false));"
+    "}"
     "updateThemeButton();"
+    "updateFakeJsonPreview();"
     "setInterval(updateDashboard,1000);"
     "setInterval(updateLcdScreen,250);"
     "updateDashboard();"
@@ -2046,6 +2485,137 @@ static esp_err_t set_time_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+static esp_err_t fake_telemetry_post_handler(httpd_req_t *req) {
+  if (!is_authenticated(req)) {
+    httpd_resp_set_status(req, "401 Unauthorized");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"success\":false,\"message\":\"Chưa đăng nhập!\"}",
+                    HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+  }
+
+  char buf[1024];
+  int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+  if (ret <= 0) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no body");
+    return ESP_FAIL;
+  }
+  buf[ret] = '\0';
+
+  cJSON *root = cJSON_Parse(buf);
+  if (root == NULL) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad json");
+    return ESP_FAIL;
+  }
+
+  const cJSON *payload_item = cJSON_GetObjectItem(root, "payload");
+  bool success = false;
+  const char *msg = "Gửi telemetry thất bại!";
+
+  if (payload_item != NULL) {
+    char *payload_str = NULL;
+    if (cJSON_IsString(payload_item)) {
+      payload_str = strdup(payload_item->valuestring);
+    } else if (cJSON_IsObject(payload_item)) {
+      payload_str = cJSON_PrintUnformatted(payload_item);
+    }
+
+    if (payload_str != NULL) {
+      BaseType_t res = PushTelemetry(payload_str);
+      if (res == pdPASS) {
+        success = true;
+        msg = "Bắn telemetry giả thành công!";
+      } else {
+        msg = "Hàng đợi telemetry bị đầy hoặc chưa khởi tạo!";
+      }
+      free(payload_str);
+    }
+  } else {
+    msg = "Thiếu trường payload trong yêu cầu!";
+  }
+
+  cJSON_Delete(root);
+
+  cJSON *resp = cJSON_CreateObject();
+  cJSON_AddBoolToObject(resp, "success", success);
+  cJSON_AddStringToObject(resp, "message", msg);
+  char *out = cJSON_PrintUnformatted(resp);
+  cJSON_Delete(resp);
+
+  if (out == NULL) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "resp fail");
+    return ESP_FAIL;
+  }
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+  free(out);
+  return ESP_OK;
+}
+
+static esp_err_t terminal_log_get_handler(httpd_req_t *req) {
+  if (!is_authenticated(req)) {
+    httpd_resp_set_status(req, "401 Unauthorized");
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_send(req, "Unauthorized", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+  }
+
+  char *out_buf = (char *)malloc(WEB_LOG_BUFFER_SIZE + 1);
+  if (out_buf == NULL) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
+    return ESP_FAIL;
+  }
+  out_buf[0] = '\0';
+  size_t out_len = 0;
+
+  portENTER_CRITICAL(&g_web_log_spinlock);
+  size_t count = g_web_log_count;
+  if (count > 0 && g_web_log_buf != NULL) {
+    size_t start_pos = (g_web_log_head + WEB_LOG_BUFFER_SIZE - count) % WEB_LOG_BUFFER_SIZE;
+    for (size_t i = 0; i < count; i++) {
+      out_buf[i] = g_web_log_buf[(start_pos + i) % WEB_LOG_BUFFER_SIZE];
+    }
+    out_buf[count] = '\0';
+    out_len = count;
+  }
+  portEXIT_CRITICAL(&g_web_log_spinlock);
+
+  httpd_resp_set_type(req, "text/plain; charset=utf-8");
+  httpd_resp_send(req, out_buf, out_len);
+  free(out_buf);
+  return ESP_OK;
+}
+
+static esp_err_t terminal_log_clear_post_handler(httpd_req_t *req) {
+  if (!is_authenticated(req)) {
+    httpd_resp_set_status(req, "401 Unauthorized");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"unauthorized\"}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+  }
+  portENTER_CRITICAL(&g_web_log_spinlock);
+  if (g_web_log_buf != NULL) {
+    memset(g_web_log_buf, 0, WEB_LOG_BUFFER_SIZE);
+  }
+  g_web_log_head = 0;
+  g_web_log_count = 0;
+  portEXIT_CRITICAL(&g_web_log_spinlock);
+
+  cJSON *resp = cJSON_CreateObject();
+  cJSON_AddBoolToObject(resp, "success", true);
+  char *out = cJSON_PrintUnformatted(resp);
+  cJSON_Delete(resp);
+  if (out == NULL) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "resp fail");
+    return ESP_FAIL;
+  }
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+  free(out);
+  return ESP_OK;
+}
+
 void web_portal_register_handlers(httpd_handle_t server) {
   static httpd_uri_t portal = {.uri = "/",
                                .method = HTTP_GET,
@@ -2117,6 +2687,21 @@ void web_portal_register_handlers(httpd_handle_t server) {
                                      .handler = set_time_post_handler,
                                      .user_ctx = NULL};
 
+  static httpd_uri_t sys_push_fake_telemetry = {.uri = "/api/push_fake_telemetry",
+                                                 .method = HTTP_POST,
+                                                 .handler = fake_telemetry_post_handler,
+                                                 .user_ctx = NULL};
+
+  static httpd_uri_t term_log = {.uri = "/api/terminal_log",
+                                 .method = HTTP_GET,
+                                 .handler = terminal_log_get_handler,
+                                 .user_ctx = NULL};
+
+  static httpd_uri_t term_log_clear = {.uri = "/api/terminal_log/clear",
+                                       .method = HTTP_POST,
+                                       .handler = terminal_log_clear_post_handler,
+                                       .user_ctx = NULL};
+
   httpd_register_uri_handler(server, &portal);
   httpd_register_uri_handler(server, &scan);
   httpd_register_uri_handler(server, &save);
@@ -2133,5 +2718,8 @@ void web_portal_register_handlers(httpd_handle_t server) {
   httpd_register_uri_handler(server, &sys_screen_fb);
   httpd_register_uri_handler(server, &sys_simulate_btn);
   httpd_register_uri_handler(server, &sys_set_time);
+  httpd_register_uri_handler(server, &sys_push_fake_telemetry);
+  httpd_register_uri_handler(server, &term_log);
+  httpd_register_uri_handler(server, &term_log_clear);
   ESP_LOGI(PORTAL_TAG, "Web portal handlers registered");
 }

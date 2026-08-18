@@ -29,44 +29,111 @@ static char s_pending_pass[64] = {0};
 static esp_netif_t *s_sta_netif = NULL;
 static esp_netif_t *s_ap_netif = NULL;
 
+#define MAX_SCAN_APS 16
+static wifi_ap_record_t s_scan_records[MAX_SCAN_APS];
+static uint16_t s_scan_count = 0;
+static wifi_scan_state_t s_scan_state = WIFI_SCAN_STATE_IDLE;
+static TaskHandle_t s_scan_task_handle = NULL;
+
+
 #define EXAMPLE_ESP_MAXIMUM_RETRY  CONFIG_ESP_MAXIMUM_RETRY
 #define WIFI_SLOW_RETRY_INTERVAL_MS 10000
+
+static void prv_align_ap_channel_with_sta(void)
+{
+#if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
+    uint8_t primary = 0;
+    wifi_second_chan_t second;
+    if (esp_wifi_get_channel(&primary, &second) == ESP_OK && primary > 0)
+    {
+        wifi_config_t ap_config;
+        if (esp_wifi_get_config(WIFI_IF_AP, &ap_config) == ESP_OK)
+        {
+            if (ap_config.ap.channel != primary)
+            {
+                ESP_LOGI(WIFI_CFG_TAG, "Aligning SoftAP channel (%d -> %d) to match Router STA channel",
+                         ap_config.ap.channel, primary);
+                ap_config.ap.channel = primary;
+                esp_wifi_set_config(WIFI_IF_AP, &ap_config);
+            }
+        }
+    }
+#endif
+}
 
 static void prv_slow_retry_task(void *pvParameters)
 {
     (void)pvParameters;
+    uint32_t slow_count = 0;
 
     while(1)
     {
         if(s_allow_sta_connect && !Sys_Info.isWifiConnected)
         {
-            ESP_LOGI(WIFI_CFG_TAG, "Slow retry connect...");
-            esp_wifi_connect();
+            slow_count++;
+            if (slow_count % 6 == 0)
+            {
+                // Sau 60s thử lại thất bại -> Thực hiện reset driver clean để xóa cache BSSID/Kênh cũ
+                ESP_LOGW(WIFI_CFG_TAG, "Slow retry threshold reached (60s). Performing clean disconnect & config re-apply...");
+                s_allow_sta_connect = false;
+                esp_wifi_disconnect();
+                vTaskDelay(pdMS_TO_TICKS(300));
+
+                wifi_config_t wifi_config = {0};
+                wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+                wifi_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
+                wifi_config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+                wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+                if (s_pending_ssid[0] != '\0')
+                {
+                    strncpy((char *)wifi_config.sta.ssid, s_pending_ssid, sizeof(wifi_config.sta.ssid) - 1);
+                    strncpy((char *)wifi_config.sta.password, s_pending_pass, sizeof(wifi_config.sta.password) - 1);
+                    esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+                }
+                s_retry_num = 0; // Reset đếm retry để quay lại đợt Fast Retry nhạy bén
+                s_allow_sta_connect = true;
+                esp_wifi_connect();
+            }
+            else
+            {
+                ESP_LOGI(WIFI_CFG_TAG, "Slow retry connect (%lu/6)...", (unsigned long)(slow_count % 6));
+                esp_wifi_connect();
+            }
+        }
+        else
+        {
+            slow_count = 0;
         }
         vTaskDelay(pdMS_TO_TICKS(WIFI_SLOW_RETRY_INTERVAL_MS));
     }
 }
 
- 
 static void prv_wifi_connect(const char *ssid, const char *pass)
 {
     wifi_config_t wifi_config = {0};
 
     wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     wifi_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
-    if(ssid != NULL)
+    wifi_config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+
+    if(ssid != NULL && ssid[0] != '\0')
     {
         strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
+        strncpy(s_pending_ssid, ssid, sizeof(s_pending_ssid) - 1);
+        s_pending_ssid[sizeof(s_pending_ssid) - 1] = '\0';
     }
     if(pass != NULL)
     {
         strncpy((char *)wifi_config.sta.password, pass, sizeof(wifi_config.sta.password) - 1);
+        strncpy(s_pending_pass, pass, sizeof(s_pending_pass) - 1);
+        s_pending_pass[sizeof(s_pending_pass) - 1] = '\0';
     }
 
     s_allow_sta_connect = false; // Disable auto-reconnect during config
     esp_wifi_disconnect();
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_LOGI(WIFI_CFG_TAG, "Connecting to SSID: %s", (char *)wifi_config.sta.ssid);
+    ESP_LOGI(WIFI_CFG_TAG, "Connecting to SSID: %s (Full Channel Scan)", (char *)wifi_config.sta.ssid);
     s_allow_sta_connect = true;  // Re-enable auto-reconnect
     s_retry_num = 0;             // Reset retry counter
     esp_wifi_connect();
@@ -231,7 +298,6 @@ static void prv_connect_task(void *pvParameters)
 static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     (void)arg;
-    (void)event_data;
 
     if(event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
     {
@@ -243,6 +309,9 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
     else if(event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
         Sys_Info.isWifiConnected = false;
+        wifi_event_sta_disconnected_t *dis_evt = (wifi_event_sta_disconnected_t *)event_data;
+        ESP_LOGW(WIFI_CFG_TAG, "WiFi STA Disconnected! Reason code: %d", dis_evt ? dis_evt->reason : -1);
+
         if(s_allow_sta_connect)
         {
             if(s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY)
@@ -267,9 +336,76 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
         Sys_Info.isWifiConnected = true;
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(WIFI_CFG_TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        prv_align_ap_channel_with_sta();
         prv_mdns_init(); // Gọi lại để cập nhật/phát sóng tên miền trên interface STA khi có IP mới
     }
+    else if(event_base == WIFI_EVENT && event_id == WIFI_EVENT_SCAN_DONE)
+    {
+        uint16_t number = MAX_SCAN_APS;
+        memset(s_scan_records, 0, sizeof(s_scan_records));
+        esp_err_t err = esp_wifi_scan_get_ap_records(&number, s_scan_records);
+        if (err == ESP_OK) {
+            s_scan_count = number;
+            s_scan_state = WIFI_SCAN_STATE_DONE;
+            ESP_LOGI(WIFI_CFG_TAG, "WiFi Scan done! Found %d APs", s_scan_count);
+        } else {
+            s_scan_count = 0;
+            s_scan_state = WIFI_SCAN_STATE_FAILED;
+            ESP_LOGE(WIFI_CFG_TAG, "WiFi Scan failed to get records: %s", esp_err_to_name(err));
+        }
+        wifi_config_manager_finish_scan();
+    }
 }
+
+static void prv_scan_task(void *pvParameters)
+{
+    (void)pvParameters;
+    s_scan_state = WIFI_SCAN_STATE_SCANNING;
+    wifi_config_manager_prepare_scan();
+
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = false,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time.active.min = 100,
+        .scan_time.active.max = 300,
+    };
+
+    esp_err_t err = esp_wifi_scan_start(&scan_config, false); // non-blocking
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_CFG_TAG, "esp_wifi_scan_start failed: %s", esp_err_to_name(err));
+        s_scan_state = WIFI_SCAN_STATE_FAILED;
+        wifi_config_manager_finish_scan();
+    }
+    s_scan_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+void wifi_config_manager_trigger_scan(void)
+{
+    if (s_scan_state == WIFI_SCAN_STATE_SCANNING) return;
+    s_scan_state = WIFI_SCAN_STATE_SCANNING;
+    s_scan_count = 0;
+    if (s_scan_task_handle == NULL) {
+        xTaskCreatePinnedToCore(prv_scan_task, "wifi_scan_task", 3584, NULL, 3, &s_scan_task_handle, 0);
+    }
+}
+
+wifi_scan_state_t wifi_config_manager_get_scan_state(void)
+{
+    return s_scan_state;
+}
+
+uint16_t wifi_config_manager_get_scan_results(wifi_ap_record_t *out_records, uint16_t max_records)
+{
+    if (out_records == NULL || max_records == 0) return 0;
+    uint16_t copy_cnt = (s_scan_count < max_records) ? s_scan_count : max_records;
+    memcpy(out_records, s_scan_records, copy_cnt * sizeof(wifi_ap_record_t));
+    return copy_cnt;
+}
+
 
 bool wifi_config_manager_load(char *ssid_out, size_t ssid_len, char *pass_out, size_t pass_len)
 {
@@ -494,6 +630,13 @@ bool wifi_config_manager_init(void)
 
     bool has_saved = wifi_config_manager_load(ssid, sizeof(ssid), pass, sizeof(pass)) && (ssid[0] != '\0');
 
+    if(has_saved)
+    {
+        strncpy(s_pending_ssid, ssid, sizeof(s_pending_ssid) - 1);
+        s_pending_ssid[sizeof(s_pending_ssid) - 1] = '\0';
+        strncpy(s_pending_pass, pass, sizeof(s_pending_pass) - 1);
+        s_pending_pass[sizeof(s_pending_pass) - 1] = '\0';
+    }
 
     s_allow_sta_connect = has_saved ? true : false;
 
@@ -504,6 +647,9 @@ bool wifi_config_manager_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 #endif
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    // Tắt Modem Power Save để Wi-Fi modem luôn chạy 100% công suất không bị lỡ gói rekeying
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
     if(s_sta_netif != NULL)
     {

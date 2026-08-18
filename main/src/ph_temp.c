@@ -58,14 +58,14 @@ void update_ph_calibration(PhCalibration_t *cal) {
             cal->slope_high = (cal->ph10_target - mid_target) / (u10 - cal->u7);
 
             // Tính độ nhạy quy đổi về mV/pH ở 25°C (298.15K)
-            float sens_low = fabsf(mid_target - 4.00f) * 298.15f / du_low;
-            float sens_high = fabsf(cal->ph10_target - mid_target) * 298.15f / du_high;
+            float sens_low = (du_low * 298.15f) / fabsf(mid_target - 4.00f);
+            float sens_high = (du_high * 298.15f) / fabsf(cal->ph10_target - mid_target);
 
             float eff_low = (sens_low / 59.16f) * 100.0f;
             float eff_high = (sens_high / 59.16f) * 100.0f;
 
-            bool low_slope_ok = (sens_low >= 47.33f && sens_low <= 65.07f);
-            bool high_slope_ok = (sens_high >= 47.33f && sens_high <= 65.07f);
+            bool low_slope_ok = (sens_low >= 41.41f && sens_low <= 68.03f);
+            bool high_slope_ok = (sens_high >= 41.41f && sens_high <= 68.03f);
 
             if (low_slope_ok && high_slope_ok) {
                 cal->is_calibrated = true;
@@ -73,7 +73,7 @@ void update_ph_calibration(PhCalibration_t *cal) {
                          sens_low, eff_low, sens_high, eff_high, cal->u7);
             } else {
                 cal->is_calibrated = false;
-                ESP_LOGE(TAG, "Lỗi hiệu chuẩn 3 điểm: Độ dốc Slope ngoài dải 80%%-110%%! Sens_low: %.2f mV/pH (%.1f%%), Sens_high: %.2f mV/pH (%.1f%%)",
+                ESP_LOGE(TAG, "Lỗi hiệu chuẩn 3 điểm: Độ dốc Slope ngoài dải 70%%-115%%! Sens_low: %.2f mV/pH (%.1f%%), Sens_high: %.2f mV/pH (%.1f%%)",
                          sens_low, eff_low, sens_high, eff_high);
             }
         } else {
@@ -87,15 +87,15 @@ void update_ph_calibration(PhCalibration_t *cal) {
             cal->slope_high = cal->slope_norm;
 
             // Tính độ nhạy quy đổi về mV/pH ở 25°C (298.15K)
-            float sens_low = 3.00f * 298.15f / du_low;
+            float sens_low = (du_low * 298.15f) / 3.00f;
             float eff_low = (sens_low / 59.16f) * 100.0f;
 
-            if (sens_low >= 47.33f && sens_low <= 65.07f) {
+            if (sens_low >= 41.41f && sens_low <= 68.03f) {
                 cal->is_calibrated = true;
                 ESP_LOGI(TAG, "Hiệu chuẩn 2 điểm thành công! Sens: %.2f mV/pH (Hiệu suất: %.1f%%), U7: %.4f", sens_low, eff_low, cal->u7);
             } else {
                 cal->is_calibrated = false;
-                ESP_LOGE(TAG, "Lỗi hiệu chuẩn 2 điểm: Độ dốc Slope ngoài dải 80%%-110%%! Sens: %.2f mV/pH (Hiệu suất: %.1f%%)", sens_low, eff_low);
+                ESP_LOGE(TAG, "Lỗi hiệu chuẩn 2 điểm: Độ dốc Slope ngoài dải 70%%-115%%! Sens: %.2f mV/pH (Hiệu suất: %.1f%%)", sens_low, eff_low);
             }
         } else {
             cal->is_calibrated = false;
