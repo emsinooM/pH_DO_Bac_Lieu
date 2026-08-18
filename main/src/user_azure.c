@@ -70,6 +70,7 @@
 TaskHandle_t Azure_Process_Handle;
 TaskHandle_t Azure_Transmit_Handle;
 TaskHandle_t Azure_Telemetry_Handle;
+TaskHandle_t Azure_Offline_Sync_Handle;
 
 /* Declare IoT hub handle */
 IoTHubHandle_t IoTHubHandle;
@@ -100,6 +101,8 @@ static void Azure_Process_Loop_Task(void *pvParameters);
 static void Azure_Transmit_Task(void *pvParameters);
 static void prvFormatScheduleTime(time_t ts, char *buf, size_t buf_len);
 static void Azure_Telemetry_Task(void *pvParameters);
+static void Azure_Offline_Sync_Task(void *pvParameters);
+
 /* === WiFi config change via Direct Method === */
 typedef struct {
     char ssid[32];
@@ -120,7 +123,7 @@ struct NetworkContext
  * the file builds. These are guarded so a real sample implementation
  * will take precedence if present. */
 #ifndef democonfigNETWORK_BUFFER_SIZE
-#define democonfigNETWORK_BUFFER_SIZE 1024U
+#define democonfigNETWORK_BUFFER_SIZE 2048U
 #endif
 
 AzureIoTHubClient_t xAzureIoTHubClient;
@@ -374,12 +377,19 @@ static void prvHandleCommand(AzureIoTHubClientCommandRequest_t *pxMessage,
         PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
 
         int16_t rssi = -120;
+        char wifi_ssid[32] = {0};
+        char wifi_pass[64] = {0};
+        wifi_config_manager_load(wifi_ssid, sizeof(wifi_ssid), wifi_pass, sizeof(wifi_pass));
         if (Is_System_Internet_Connected())
         {
             wifi_ap_record_t ap_info;
             if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK)
             {
                 rssi = ap_info.rssi;
+                if (wifi_ssid[0] == '\0')
+                {
+                    strncpy(wifi_ssid, (const char *)ap_info.ssid, sizeof(wifi_ssid) - 1);
+                }
             }
         }
 
@@ -420,6 +430,8 @@ static void prvHandleCommand(AzureIoTHubClientCommandRequest_t *pxMessage,
             cJSON_AddNumberToObject(sensor_data, "do_sat", status.do_saturation_pct);
             cJSON_AddBoolToObject(sensor_data, "do_valid", status.do_valid);
             cJSON_AddNumberToObject(sensor_data, "rssi", rssi);
+            cJSON_AddStringToObject(sensor_data, "wifi_ssid", wifi_ssid);
+            cJSON_AddStringToObject(sensor_data, "wifi_pass", wifi_pass);
             cJSON_AddNumberToObject(sensor_data, "uptime", uptime_sec);
             cJSON_AddStringToObject(sensor_data, "reset_reason", reason_str);
             cJSON_AddNumberToObject(sensor_data, "free_ram", free_ram);
@@ -518,9 +530,9 @@ void User_Azure_Connect(void)
         // configASSERT( ulStatus == 0 );
         if (ulStatus != 0)
         {
-            ESP_LOGE("AZURE", "Connect to TLS server failed. Retrying in next loop...");
-            IoTHubHandle.isNeedReinit = true;
-            return; // Thoát hàm kết nối, lát nữa vòng lặp while(1) bên dưới sẽ gọi tự động làm lại
+            ESP_LOGE("AZURE", "Connect to TLS server failed. Retrying in 5 seconds...");
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            return;
         }
 
         /* Fill in Transport Interface send and receive function pointers. */
@@ -551,7 +563,13 @@ void User_Azure_Connect(void)
                                                     (const uint8_t *)IoTHubHandle.symmetricKey,
                                                     strlen((const char *)IoTHubHandle.symmetricKey),
                                                     Crypto_HMAC);
-        configASSERT(xResult == eAzureIoTSuccess);
+        if (xResult != eAzureIoTSuccess)
+        {
+            ESP_LOGE("AZURE", "Set Symmetric Key failed: %d (check Azure Key format). Disconnecting...", xResult);
+            TLS_Socket_Disconnect(&xNetworkContext);
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            return;
+        }
 #endif /* democonfigDEVICE_SYMMETRIC_KEY */
 
         /* Sends an MQTT Connect packet over the already established TLS connection,
@@ -563,9 +581,9 @@ void User_Azure_Connect(void)
                                             5000U);
         if (xResult != eAzureIoTSuccess)
         {
-            ESP_LOGE("AZURE", "MQTT Connect to IoT Hub failed: %d. Disconnecting and retrying...", xResult);
+            ESP_LOGE("AZURE", "MQTT Connect to IoT Hub failed: %d. Disconnecting and retrying in 5s...", xResult);
             TLS_Socket_Disconnect(&xNetworkContext);
-            IoTHubHandle.isNeedReinit = true;
+            vTaskDelay(pdMS_TO_TICKS(5000));
             return;
         }
 
@@ -575,7 +593,7 @@ void User_Azure_Connect(void)
         {
             ESP_LOGE("AZURE", "Subscribe C2D failed: %d. Disconnecting...", xResult);
             TLS_Socket_Disconnect(&xNetworkContext);
-            IoTHubHandle.isNeedReinit = true;
+            vTaskDelay(pdMS_TO_TICKS(5000));
             return;
         }
 
@@ -585,9 +603,10 @@ void User_Azure_Connect(void)
         {
             ESP_LOGE("AZURE", "Subscribe Command failed: %d. Disconnecting...", xResult);
             TLS_Socket_Disconnect(&xNetworkContext);
-            IoTHubHandle.isNeedReinit = true;
+            vTaskDelay(pdMS_TO_TICKS(5000));
             return;
         }
+
 
         IoTHubHandle.isAzureInitialized = true;
 
@@ -632,6 +651,19 @@ void User_Azure_Connect(void)
             else
             {
                 ESP_LOGI("AZURE: TELEMETRY", "Create telemetry task fail\n");
+            }
+        }
+
+        if (IoTHubHandle.isOfflineSyncInitialized == false)
+        {
+            if (xTaskCreatePinnedToCore(Azure_Offline_Sync_Task, "Azure offline sync", 4 * 4096, NULL, 2, &Azure_Offline_Sync_Handle, 0) == pdPASS)
+            {
+                ESP_LOGI("AZURE: OFFLINE SYNC", "Create offline sync task successfully");
+                IoTHubHandle.isOfflineSyncInitialized = true;
+            }
+            else
+            {
+                ESP_LOGI("AZURE: OFFLINE SYNC", "Create offline sync task fail\n");
             }
         }
 // --- KIỂM TRA BÁO CÁO KẾT QUẢ OTA LÊN CLOUD ---
@@ -733,12 +765,12 @@ void User_Azure_Task(void)
             if (xSemaphoreTake(azureMutex, pdMS_TO_TICKS(3000U)) == pdTRUE)
             {
                 IoTHubHandle.isNeedReinit = false;
-                // if (IoTHubHandle.isAzureInitialized)
-                // {
-                AzureIoTHubClient_Deinit(&xAzureIoTHubClient);
-                // }
-                TLS_Socket_Disconnect(&xNetworkContext);
-                IoTHubHandle.isAzureInitialized = false;
+                if (IoTHubHandle.isAzureInitialized)
+                {
+                    AzureIoTHubClient_Deinit(&xAzureIoTHubClient);
+                    TLS_Socket_Disconnect(&xNetworkContext);
+                    IoTHubHandle.isAzureInitialized = false;
+                }
                 xSemaphoreGive(azureMutex);
             }
             else
@@ -746,6 +778,7 @@ void User_Azure_Task(void)
                 ESP_LOGE("AZURE: REINIT", "Cannot get mutex to deinit");
             }
         }
+
 
         if(bIsOtaActivated)
         {
@@ -920,6 +953,107 @@ static void prv_telemetry_state_load(void){
     ESP_LOGI("TELE_NVS", "Loaded state: active=%d, interval=%lu ms", g_telemetry_active, (unsigned long)g_telemetry_interval_ms);
 }
 
+static void Azure_Offline_Sync_Task(void *pvParameters)
+{
+    ESP_LOGI("AZURE: OFFLINE SYNC", "Azure offline telemetry sync task started");
+
+    while (1)
+    {
+        if (!Is_System_Internet_Connected() || !IoTHubHandle.isAzureInitialized || IoTHubHandle.isNeedReinit || bIsOtaActivated)
+        {
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            continue;
+        }
+
+        uint16_t unsynced_count = Fram_Log_Get_Unsynced_Count();
+        if (unsynced_count == 0)
+        {
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            continue;
+        }
+
+        EnvLogRecord_t batch_records[10];
+        uint16_t fetched_count = 0;
+
+        if (Fram_Log_Get_Unsynced_Batch(batch_records, 10, &fetched_count) && fetched_count > 0)
+        {
+            cJSON *root = cJSON_CreateObject();
+            cJSON *pl = cJSON_CreateObject();
+
+            if (root != NULL && pl != NULL)
+            {
+                cJSON_AddStringToObject(pl, "HostName", IoTHubHandle.hostName);
+                cJSON_AddStringToObject(pl, "DeviceId", IoTHubHandle.deviceId);
+                cJSON_AddNumberToObject(pl, "Code", CMD_CODE_OFFLINE_TELEMETRY_SYNC);
+                cJSON_AddNumberToObject(pl, "TimeStamp", (double)time(NULL));
+                cJSON_AddBoolToObject(pl, "IsOfflineData", true);
+                cJSON_AddNumberToObject(pl, "BatchSize", fetched_count);
+
+                cJSON *arr = cJSON_CreateArray();
+                if (arr != NULL)
+                {
+                    for (uint16_t i = 0; i < fetched_count; i++)
+                    {
+                        cJSON *rec_item = cJSON_CreateObject();
+                        if (rec_item != NULL)
+                        {
+                            cJSON_AddNumberToObject(rec_item, "TimeStamp", (double)batch_records[i].timestamp);
+                            cJSON_AddNumberToObject(rec_item, "ph", (double)(batch_records[i].ph_x100 / 100.0f));
+                            cJSON_AddNumberToObject(rec_item, "temp", (double)(batch_records[i].temp_x100 / 100.0f));
+                            cJSON_AddNumberToObject(rec_item, "do", (double)(batch_records[i].do_x100 / 100.0f));
+                            cJSON_AddItemToArray(arr, rec_item);
+                        }
+                    }
+                    cJSON_AddItemToObject(pl, "OfflineRecords", arr);
+                }
+                cJSON_AddItemToObject(root, "payload", pl);
+
+                char *json_str = cJSON_PrintUnformatted(root);
+                if (json_str != NULL)
+                {
+                    ESP_LOGI("AZURE: OFFLINE SYNC", "Sending %u offline records to Azure (remaining: %u)",
+                             fetched_count, unsynced_count - fetched_count);
+
+                    if (xSemaphoreTake(azureMutex, pdMS_TO_TICKS(5000U)) == pdTRUE)
+                    {
+                        AzureIoTResult_t send_res = AzureIoTHubClient_SendTelemetry(
+                            &xAzureIoTHubClient,
+                            (const uint8_t *)json_str,
+                            strlen(json_str),
+                            NULL,
+                            eAzureIoTHubMessageQoS1,
+                            NULL
+                        );
+                        xSemaphoreGive(azureMutex);
+
+                        if (send_res == eAzureIoTSuccess)
+                        {
+                            ESP_LOGI("AZURE: OFFLINE SYNC", "Successfully sent batch of %u offline records", fetched_count);
+                            Fram_Log_Commit_Synced_Count(fetched_count);
+                        }
+                        else
+                        {
+                            ESP_LOGE("AZURE: OFFLINE SYNC", "Send telemetry failed: %d. Will retry this batch...", send_res);
+                        }
+                    }
+                    else
+                    {
+                        ESP_LOGE("AZURE: OFFLINE SYNC", "Cannot acquire mutex to send offline batch. Retrying...");
+                    }
+                    free(json_str);
+                }
+                cJSON_Delete(root);
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+        else
+        {
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
+    }
+}
+
 static void Azure_Telemetry_Task(void *pvParameters)
 {
     prv_telemetry_state_load();
@@ -953,14 +1087,20 @@ static void Azure_Telemetry_Task(void *pvParameters)
 
             PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
             
-            // 1. Lấy cường độ tín hiệu WiFi (RSSI)
+            // 1. Lấy thông tin WiFi (SSID & RSSI)
             int16_t rssi = -120; 
+            char wifi_ssid[32] = {0};
+            wifi_config_manager_load(wifi_ssid, sizeof(wifi_ssid), NULL, 0);
             if (Is_System_Internet_Connected())
             {
                 wifi_ap_record_t ap_info;
                 if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK)
                 {
                     rssi = ap_info.rssi;
+                    if (wifi_ssid[0] == '\0')
+                    {
+                        strncpy(wifi_ssid, (const char *)ap_info.ssid, sizeof(wifi_ssid) - 1);
+                    }
                 }
             }
 
@@ -982,14 +1122,6 @@ static void Azure_Telemetry_Task(void *pvParameters)
                 default: break;
             }
 
-            // 4. Lấy RAM trống
-            uint32_t free_ram = esp_get_free_heap_size();
-
-            // 5. Lấy tên phân vùng OTA đang chạy (thường là "ota_0" hoặc "ota_1")
-            const esp_partition_t *running_part = esp_ota_get_running_partition();
-            const char *part_label = (running_part != NULL) ? running_part->label : "Unknown";
-
-
             // 5. Định dạng chuỗi JSON gửi lên Azure (Nới rộng lên 768 bytes)
             char tele_str[768];
             int len = snprintf(tele_str, sizeof(tele_str),
@@ -1007,13 +1139,11 @@ static void Azure_Telemetry_Task(void *pvParameters)
                     "\"do_sat\":%.2f,"
                     "\"do_valid\":%s,"   
                     "\"rssi\":%d,"
+                    "\"wifi_ssid\":\"%s\","
                     "\"uptime\":%lu,"
                     "\"reset_reason\":\"%s\","
-                    "\"free_ram\":%lu,"
                     "\"v_probe_mv\":%.2f,"
-                    "\"do_err\":%d,"
-                    "\"ver\":\"%s\","
-                    "\"ota_part\":\"%s\""
+                    "\"do_err\":%d"
                 "}"                        
             "}}",
 
@@ -1028,13 +1158,11 @@ static void Azure_Telemetry_Task(void *pvParameters)
                 (double)status.do_saturation_pct,
                 status.do_valid ? "true" : "false",
                 rssi,
+                wifi_ssid,
                 (unsigned long)uptime_sec,
                 reason_str,
-                (unsigned long)free_ram,
                 (double)status.v_probe_mv,
-                status.do_error_code,
-                VERSION,
-                part_label
+                status.do_error_code
             );
 
             if (len > 0 && len < sizeof(tele_str))
@@ -1898,12 +2026,19 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
             PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
 
             int16_t rssi = -120;
+            char wifi_ssid[32] = {0};
+            char wifi_pass[64] = {0};
+            wifi_config_manager_load(wifi_ssid, sizeof(wifi_ssid), wifi_pass, sizeof(wifi_pass));
             if (Is_System_Internet_Connected())
             {
                 wifi_ap_record_t ap_info;
                 if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK)
                 {
                     rssi = ap_info.rssi;
+                    if (wifi_ssid[0] == '\0')
+                    {
+                        strncpy(wifi_ssid, (const char *)ap_info.ssid, sizeof(wifi_ssid) - 1);
+                    }
                 }
             }
 
@@ -1943,6 +2078,8 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
                     "\"do_sat\":%.2f,"
                     "\"do_valid\":%s,"   
                     "\"rssi\":%d,"
+                    "\"wifi_ssid\":\"%s\","
+                    "\"wifi_pass\":\"%s\","
                     "\"uptime\":%lu,"
                     "\"reset_reason\":\"%s\","
                     "\"free_ram\":%lu,"
@@ -1976,6 +2113,8 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
                 (double)status.do_saturation_pct,
                 status.do_valid ? "true" : "false",
                 rssi,
+                wifi_ssid,
+                wifi_pass,
                 (unsigned long)uptime_sec,
                 reason_str,
                 (unsigned long)free_ram,
@@ -1998,8 +2137,8 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
 
             if (len > 0 && len < sizeof(tele_str))
             {
-                ESP_LOGI("AZURE: TELEMETRY (508)", "Push requested full telemetry: %s", tele_str);
-                PushTelemetry(tele_str);
+                ESP_LOGI("AZURE: TELEMETRY (508)", "Requested full telemetry: %s", tele_str);
+                // PushTelemetry(tele_str); // Tắt push telemetry cho Code 508 (chỉ gửi trực tiếp qua Direct Method Response)
                 response->status = COMMAND_STATUS_OK;
                 snprintf(response->payload, sizeof(response->payload), "Full telemetry sent successfully");
             }

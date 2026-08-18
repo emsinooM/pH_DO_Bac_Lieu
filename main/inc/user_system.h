@@ -18,7 +18,7 @@
 #define SYS_IOT_HUB_HOST_NAME_DEFAULT           "dev-iot-hub-1.azure-devices.net"
 #define SYS_IOT_HUB_DEVICE_ID_DEFAULT           "test-devices-6"
 #define SYS_IOT_HUB_SYMMETRIC_KEY_DEFAULT       "S7cpXyl9xfxLNUBMR4D36aKJhlf1IQVoFk8swv62fKI="
-
+//+
 /* Define for FRAM */
 #define DEVICE_CONFIG_START_ADDRESS 0x1000
 #define DEVICE_SPACE_LEN_IN_FRAM    512
@@ -33,10 +33,12 @@
 #define CMD_CODE_DO_CALIBRATE               506
 #define CMD_CODE_REBOOT                     507
 #define CMD_CODE_GET_FULL_TELEMETRY         508
+#define CMD_CODE_OFFLINE_TELEMETRY_SYNC     510
 
 
 
-#define VERSION "1.0.2"
+
+#define VERSION "1.1.0"
 
 
 /* Define Telemetry queue length */

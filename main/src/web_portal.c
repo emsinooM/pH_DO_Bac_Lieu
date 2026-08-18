@@ -875,8 +875,14 @@ static const char *portal_html =
     "setLoading(btn,true,'Scanning...');setMsg('Scanning networks...');"
     "fetch('/scan').then(r=>r.json()).then(list=>{"
     "const sel=document.getElementById('ssid');sel.innerHTML='';"
-    "list.forEach(s=>{const "
-    "o=document.createElement('option');o.value=s;o.text=s;sel.add(o);});"
+    "list.forEach(s=>{"
+    "const o=document.createElement('option');"
+    "if(typeof s==='object'&&s!==null){"
+    "o.value=s.ssid;o.text=s.ssid+' ('+s.rssi+' dBm)';"
+    "}else{"
+    "o.value=s;o.text=s;"
+    "}"
+    "sel.add(o);});"
     "setMsg('Scan complete');"
     "}).catch(()=>setMsg('Scan failed')).finally(()=>setLoading(btn,false));"
     "}"
@@ -1523,13 +1529,7 @@ static const char *portal_html =
     "const reset_reason=document.getElementById('fake_reset_reason').value||'Power-on Reset';"
     "const valid=document.getElementById('fake_valid').checked;"
     "const do_valid=document.getElementById('fake_do_valid').checked;"
-    "const payloadObj={"
-    "payload:{"
-    "HostName:host,"
-    "DeviceId:dev,"
-    "Code:code,"
-    "TimeStamp:ts,"
-    "SensorData:{"
+    "const sensorDataObj={"
     "ph:ph,"
     "ph_temp:ph_temp,"
     "Valid:valid,"
@@ -1538,14 +1538,25 @@ static const char *portal_html =
     "do_sat:do_sat,"
     "do_valid:do_valid,"
     "rssi:rssi,"
+    "wifi_ssid:'My_WiFi_SSID',"
     "uptime:uptime,"
     "reset_reason:reset_reason,"
-    "free_ram:free_ram,"
     "v_probe_mv:v_probe_mv,"
-    "do_err:do_err,"
-    "ver:ver,"
-    "ota_part:ota_part"
+    "do_err:do_err"
+    "};"
+    "if(code===508){"
+    "sensorDataObj.free_ram=free_ram;"
+    "sensorDataObj.ver=ver;"
+    "sensorDataObj.ota_part=ota_part;"
+    "sensorDataObj.wifi_pass='******';"
     "}"
+    "const payloadObj={"
+    "payload:{"
+    "HostName:host,"
+    "DeviceId:dev,"
+    "Code:code,"
+    "TimeStamp:ts,"
+    "SensorData:sensorDataObj"
     "}"
     "};"
     "const el=document.getElementById('fake_json_preview');"
@@ -1662,13 +1673,17 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, "{\"status\":\"unauthorized\"}",
-                    HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "{\"status\":\"unauthorized\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
   }
-
   wifi_config_manager_prepare_scan();
-  wifi_scan_config_t scan_config = {0};
+  wifi_scan_config_t scan_config = {
+    .ssid = NULL,
+    .bssid = NULL,
+    .channel = 0,
+    .show_hidden = false,
+    .scan_type = WIFI_SCAN_TYPE_ACTIVE
+  };
   esp_err_t err = esp_wifi_scan_start(&scan_config, true);
   if (err != ESP_OK) {
     ESP_LOGE(PORTAL_TAG, "Scan start failed: %s", esp_err_to_name(err));
@@ -1676,37 +1691,48 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
     wifi_config_manager_finish_scan();
     return ESP_FAIL;
   }
-
-  uint16_t ap_num = 0;
-  ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_num));
-  wifi_ap_record_t *ap_records = calloc(ap_num, sizeof(wifi_ap_record_t));
-  if (ap_records == NULL) {
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no mem");
-    wifi_config_manager_finish_scan();
-    return ESP_FAIL;
-  }
-
-  ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_num, ap_records));
-  wifi_config_manager_finish_scan();
-
+  // Đọc danh sách AP từ bộ đệm đã được wifi_config_manager lưu giữ an toàn
+  wifi_ap_record_t ap_records[16];
+  uint16_t ap_num = wifi_config_manager_get_scan_results(ap_records, 16);
   cJSON *arr = cJSON_CreateArray();
-  for (uint16_t i = 0; i < ap_num; i++) {
-    if (ap_records[i].ssid[0] == '\0') {
-      continue;
+  if (ap_num > 0) {
+    // 1. Sắp xếp danh sách AP theo tín hiệu RSSI giảm dần (sóng mạnh lên trước)
+    for (int i = 0; i < ap_num - 1; i++) {
+      for (int j = i + 1; j < ap_num; j++) {
+        if (ap_records[j].rssi > ap_records[i].rssi) {
+          wifi_ap_record_t temp = ap_records[i];
+          ap_records[i] = ap_records[j];
+          ap_records[j] = temp;
+        }
+      }
     }
-    cJSON_AddItemToArray(arr,
-                         cJSON_CreateString((const char *)ap_records[i].ssid));
+    // 2. Lọc trùng SSID và lọc SSID rỗng
+    for (uint16_t i = 0; i < ap_num; i++) {
+      if (ap_records[i].ssid[0] == '\0') continue;
+      bool duplicate = false;
+      int arr_size = cJSON_GetArraySize(arr);
+      for (int k = 0; k < arr_size; k++) {
+        cJSON *item = cJSON_GetArrayItem(arr, k);
+        cJSON *existing_ssid = cJSON_GetObjectItem(item, "ssid");
+        if (existing_ssid && existing_ssid->valuestring && strcmp(existing_ssid->valuestring, (const char *)ap_records[i].ssid) == 0) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (!duplicate) {
+        cJSON *obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(obj, "ssid", (const char *)ap_records[i].ssid);
+        cJSON_AddNumberToObject(obj, "rssi", ap_records[i].rssi);
+        cJSON_AddItemToArray(arr, obj);
+      }
+    }
   }
-
   char *out = cJSON_PrintUnformatted(arr);
   cJSON_Delete(arr);
-  free(ap_records);
-
   if (out == NULL) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json fail");
     return ESP_FAIL;
   }
-
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
   free(out);

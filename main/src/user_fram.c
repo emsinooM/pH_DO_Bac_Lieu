@@ -290,12 +290,17 @@ bool Fram_Log_Init(void)
         header.head_index = 0;
         header.tail_index = 0;
         header.record_count = 0;
+        header.synced_index = 0;
         header.max_records = FRAM_LOG_MAX_RECORDS;
         header.record_size = FRAM_LOG_RECORD_SIZE;
 
         Fram_Write_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
         ESP_LOGI(FRAM_TAG, "FRAM Environment Log Header initialized successfully.");
     } else {
+        if (header.synced_index >= FRAM_LOG_MAX_RECORDS) {
+            header.synced_index = header.tail_index;
+            Fram_Write_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
+        }
         ESP_LOGI(FRAM_TAG, "FRAM Log Header valid: count=%u, head=%u, tail=%u",
                  header.record_count, header.head_index, header.tail_index);
     }
@@ -320,10 +325,16 @@ bool Fram_Log_Write_Record(float ph, float temp, float do_mg_l, uint8_t flags)
         Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
     }
 
+    time_t cur_time = time(NULL);
+    if (cur_time < 1700000000) {
+        ESP_LOGW(FRAM_TAG, "Chua dong bo thoi gian thuc (time < 2024), bo qua ghi FRAM.");
+        return false;
+    }
+
     // Đóng gói dữ liệu (float -> int x100)
     EnvLogRecord_t rec;
     memset(&rec, 0, sizeof(rec));
-    rec.timestamp = (uint32_t)time(NULL);
+    rec.timestamp = (uint32_t)cur_time;
     rec.ph_x100 = (uint16_t)(ph * 100.0f + 0.5f);
     
     if (temp >= 0) {
@@ -351,6 +362,9 @@ bool Fram_Log_Write_Record(float ph, float temp, float do_mg_l, uint8_t flags)
     } else {
         // Đã đầy bộ nhớ: Đẩy con trỏ tail_index để loại bỏ bản ghi cũ nhất
         header.tail_index = (header.tail_index + 1) % FRAM_LOG_MAX_RECORDS;
+        if (header.synced_index == written_slot) {
+            header.synced_index = header.tail_index;
+        }
     }
 
     // Ghi đè cập nhật Header lại vào FRAM
@@ -411,6 +425,84 @@ uint16_t Fram_Log_Get_Count(void)
     return header.record_count;
 }
 
+uint16_t Fram_Log_Get_Unsynced_Count(void)
+{
+    if (!Fram_Init()) return 0;
+
+    Fram_Log_Header_t header;
+    if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
+        return 0;
+    }
+
+    if (header.magic != FRAM_LOG_MAGIC || header.record_count == 0) {
+        return 0;
+    }
+
+    uint16_t unsynced = 0;
+    if (header.head_index >= header.synced_index) {
+        unsynced = header.head_index - header.synced_index;
+    } else {
+        unsynced = FRAM_LOG_MAX_RECORDS - header.synced_index + header.head_index;
+    }
+
+    if (unsynced > header.record_count) {
+        unsynced = header.record_count;
+    }
+
+    return unsynced;
+}
+
+bool Fram_Log_Get_Unsynced_Batch(EnvLogRecord_t *records_out, uint16_t max_records, uint16_t *count_out)
+{
+    if (records_out == NULL || count_out == NULL || max_records == 0 || !Fram_Init()) {
+        if (count_out) *count_out = 0;
+        return false;
+    }
+
+    *count_out = 0;
+    uint16_t unsynced = Fram_Log_Get_Unsynced_Count();
+    if (unsynced == 0) {
+        return true;
+    }
+
+    Fram_Log_Header_t header;
+    if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
+        return false;
+    }
+
+    uint16_t to_read = (unsynced > max_records) ? max_records : unsynced;
+
+    for (uint16_t i = 0; i < to_read; i++) {
+        uint16_t slot = (header.synced_index + i) % FRAM_LOG_MAX_RECORDS;
+        uint16_t addr = FRAM_LOG_DATA_START + (slot * FRAM_LOG_RECORD_SIZE);
+        if (!Fram_Read_Data(addr, (uint8_t *)&records_out[i], sizeof(EnvLogRecord_t))) {
+            ESP_LOGE(FRAM_TAG, "Failed to read record at slot %u", slot);
+            break;
+        }
+        (*count_out)++;
+    }
+
+    return true;
+}
+
+bool Fram_Log_Commit_Synced_Count(uint16_t count)
+{
+    if (count == 0 || !Fram_Init()) return true;
+
+    Fram_Log_Header_t header;
+    if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
+        return false;
+    }
+
+    if (header.magic != FRAM_LOG_MAGIC) return false;
+
+    header.synced_index = (header.synced_index + count) % FRAM_LOG_MAX_RECORDS;
+    Fram_Write_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
+    
+    ESP_LOGI(FRAM_TAG, "Committed %u synced records. New synced_index=%u", count, header.synced_index);
+    return true;
+}
+
 void Fram_Log_Clear_All(void)
 {
     if (!Fram_Init()) return;
@@ -421,6 +513,7 @@ void Fram_Log_Clear_All(void)
     header.head_index = 0;
     header.tail_index = 0;
     header.record_count = 0;
+    header.synced_index = 0;
     header.max_records = FRAM_LOG_MAX_RECORDS;
     header.record_size = FRAM_LOG_RECORD_SIZE;
 
@@ -437,13 +530,22 @@ void User_Fram_Task()
 
     while (1)
     {
-        PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
+        time_t cur_time = time(NULL);
+        if (cur_time >= 1700000000)
+        {
+            PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
 
-        uint8_t flags = 0;
-        if (status.is_calibrated) flags |= (1 << 0);
-        if (status.do_valid)       flags |= (1 << 1);
+            uint8_t flags = 0;
+            if (status.is_calibrated) flags |= (1 << 0);
+            if (status.do_valid)       flags |= (1 << 1);
 
         Fram_Log_Write_Record(status.ph, status.temperature, status.do_mg_l, flags);
+        }
+
+        else
+        {
+            ESP_LOGW(FRAM_TAG, "Chua co thoi gian thuc chuan (time < 2024), tam ngung ghi log FRAM...");
+        }
 
         // Lưu định kỳ 1 phút (60,000 ms)
         vTaskDelay(pdMS_TO_TICKS(60000));

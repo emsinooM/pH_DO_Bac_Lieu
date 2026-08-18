@@ -231,18 +231,26 @@ static const page_def_t s_pages_en[PAGE_COUNT] = {
 
     [PAGE_PH_SETTINGS] = {
         .title      = "pH Sensor Settings",
-        .item_count = 5,
+        .item_count = 6,
         .items      = { "4.1.1 Calibration",
-                        "4.1.2 Digital Filter",
-                        "4.1.3 Temp Mode",
-                        "4.1.4 Temp Settings",
-                        "4.1.5 Linear Comp" },
+                        "4.1.2 Sensor Health",
+                        "4.1.3 Digital Filter",
+                        "4.1.4 Temp Mode",
+                        "4.1.5 Temp Settings",
+                        "4.1.6 Linear Comp" },
         .children   = { PAGE_CALIBRATION,
+                        PAGE_PH_HEALTH,
                         PAGE_DIGITAL_FILTER,
                         PAGE_TEMP_MODE,
                         PAGE_TEMP_SETTINGS,
                         PAGE_TEMP_LIN_COMP },
         .parent     = PAGE_SENSOR_SETTINGS,
+    },
+
+    [PAGE_PH_HEALTH] = {
+        .title      = "pH Sensor Health",
+        .item_count = 0,
+        .parent     = PAGE_PH_SETTINGS,
     },
 
     [PAGE_DO_SETTINGS] = {
@@ -608,18 +616,26 @@ static const page_def_t s_pages_vi[PAGE_COUNT] = {
 
     [PAGE_PH_SETTINGS] = {
         .title      = "Cam Bien pH",
-        .item_count = 5,
+        .item_count = 6,
         .items      = { "4.1.1 Hieu Chuan pH",
-                        "4.1.2 Bo Loc So",
-                        "4.1.3 Che Do Nhiet Do",
-                        "4.1.4 Cai Dat Nhiet Do",
-                        "4.1.5 Bu Tuyen Tinh T" },
+                        "4.1.2 Suc Khoe Cam Bien",
+                        "4.1.3 Bo Loc So",
+                        "4.1.4 Che Do Nhiet Do",
+                        "4.1.5 Cai Dat Nhiet Do",
+                        "4.1.6 Bu Tuyen Tinh T" },
         .children   = { PAGE_CALIBRATION,
+                        PAGE_PH_HEALTH,
                         PAGE_DIGITAL_FILTER,
                         PAGE_TEMP_MODE,
                         PAGE_TEMP_SETTINGS,
                         PAGE_TEMP_LIN_COMP },
         .parent     = PAGE_SENSOR_SETTINGS,
+    },
+
+    [PAGE_PH_HEALTH] = {
+        .title      = "Suc Khoe Cam Bien",
+        .item_count = 0,
+        .parent     = PAGE_PH_SETTINGS,
     },
 
     [PAGE_DO_SETTINGS] = {
@@ -2485,6 +2501,82 @@ static void menu_handle_confirm_reset_buttons(void)
     btn_edge(BTN_IDX_RIGHT);
 }
 
+/* ── Màn hình Kiểm tra Sức khỏe Cảm biến pH ── */
+static void menu_render_ph_health(void)
+{
+    LCD_Clear();
+
+    // 1. Tiêu đề (nền đen chữ trắng)
+    LCD_FillRect(0, 0, 128, TITLE_BAR_H, LCD_COLOR_ON);
+    const char *title = (g_sys_lang == LANG_VI) ? "Suc Khoe Cam Bien pH" : "pH Sensor Health";
+    LCD_DrawString(4, 1, title, LCD_COLOR_OFF);
+
+    // 2. Lấy dữ liệu chẩn đoán sức khỏe cảm biến pH
+    PhSensorHealth_t health = Get_PH_Sensor_Health();
+
+    if (!health.is_calibrated) {
+        // Chưa được hiệu chuẩn thực tế
+        const char *msg1 = (g_sys_lang == LANG_VI) ? "Chua Hieu Chuan!" : "Not Calibrated!";
+        const char *msg2 = (g_sys_lang == LANG_VI) ? "Vui long calib ph" : "Please calib pH";
+        const char *msg3 = (g_sys_lang == LANG_VI) ? "de tinh suc khoe." : "to get health data";
+
+        LCD_DrawString((128 - strlen(msg1) * 6) / 2, 16, msg1, LCD_COLOR_ON);
+        LCD_DrawString((128 - strlen(msg2) * 6) / 2, 28, msg2, LCD_COLOR_ON);
+        LCD_DrawString((128 - strlen(msg3) * 6) / 2, 38, msg3, LCD_COLOR_ON);
+    } else {
+        // Dòng 1: Slope % & sensitivity
+        char slope_str[32];
+        snprintf(slope_str, sizeof(slope_str), "Slope : %.1f%% (%.1fmV)", health.slope_pct, health.sens_mv_per_ph);
+        LCD_DrawString(2, 13, slope_str, LCD_COLOR_ON);
+
+        // Dòng 2: Zero Offset mV
+        char zero_str[32];
+        snprintf(zero_str, sizeof(zero_str), "Zero  : %s%.1f mV", (health.zero_offset_mv >= 0.0f) ? "+" : "", health.zero_offset_mv);
+        LCD_DrawString(2, 23, zero_str, LCD_COLOR_ON);
+
+        // Dòng 3 & 4: Đánh giá trạng thái (Status / Cảnh báo)
+        if (health.is_healthy) {
+            // Cảm biến hoạt động tốt (Good / Healthy)
+            const char *status_str = (g_sys_lang == LANG_VI) ? "Danh gia: TOT (OK)" : "Status  : GOOD (OK)";
+            LCD_DrawString(2, 34, status_str, LCD_COLOR_ON);
+
+            const char *sub_str = (g_sys_lang == LANG_VI) ? "Dien cuc hoat dong tot" : "Sensor working well";
+            LCD_DrawString(2, 43, sub_str, LCD_COLOR_ON);
+        } else {
+            // Cảnh báo cảm biến già / cần vệ sinh điện cực
+            LCD_FillRect(0, 33, 128, 17, LCD_COLOR_ON); // Banner đen nổi bật
+
+            const char *warn1 = (g_sys_lang == LANG_VI) ? "CAN VE SINH DIEN CUC!" : "CLEAN SENSOR / AGING!";
+            const char *warn2 = (g_sys_lang == LANG_VI) ? "Slope <80% hoac |Z|>30mV" : "Slope <80% or |Z|>30mV";
+
+            uint8_t w1 = strlen(warn1) * 6;
+            uint8_t w2 = strlen(warn2) * 6;
+            LCD_DrawString((128 - w1) / 2, 35, warn1, LCD_COLOR_OFF);
+            LCD_DrawString((128 - w2) / 2, 43, warn2, LCD_COLOR_OFF);
+        }
+    }
+
+    // 3. Status bar dưới cùng (ESC)
+    LCD_FillRect(0, STATUS_BAR_Y, 128, STATUS_BAR_H, LCD_COLOR_ON);
+    LCD_DrawString(8, STATUS_BAR_Y + 3, (g_sys_lang == LANG_VI) ? "HUY" : "ESC", LCD_COLOR_OFF);
+    LCD_DrawString(100, STATUS_BAR_Y + 3, (g_sys_lang == LANG_VI) ? "THOAT" : "BACK", LCD_COLOR_OFF);
+
+    LCD_Flush();
+}
+
+static void menu_handle_ph_health_buttons(void)
+{
+    if (btn_edge(BTN_IDX_ESC) || btn_edge(BTN_IDX_ENTER)) {
+        goto_page(PAGE_PH_SETTINGS);
+        g_lcd_need_redraw = true;
+        return;
+    }
+
+    btn_edge(BTN_IDX_RIGHT);
+    btn_edge(BTN_IDX_UP);
+    btn_edge(BTN_IDX_DOWN);
+}
+
 static void menu_render_temp_settings(void)
 {
     LCD_Clear();
@@ -2901,6 +2993,12 @@ void menu_handle_buttons(void)
     /* Xử lý phím riêng cho màn hình Hỏi xác nhận Reset cảm biến */
     if (g_menu.current_page == PAGE_CONFIRM_RESET) {
         menu_handle_confirm_reset_buttons();
+        return;
+    }
+
+    /* Xử lý phím riêng cho màn hình Sức khỏe cảm biến pH */
+    if (g_menu.current_page == PAGE_PH_HEALTH) {
+        menu_handle_ph_health_buttons();
         return;
     }
 
@@ -3365,6 +3463,8 @@ void menu_render(void)
         menu_render_wifi_status();
     } else if (g_menu.current_page == PAGE_DEVICE_INFO) {
         menu_render_device_info();
+    } else if (g_menu.current_page == PAGE_PH_HEALTH) {
+        menu_render_ph_health();
     } else {
 
         /* ── 2. Danh sách mục (y=13..48) ── */

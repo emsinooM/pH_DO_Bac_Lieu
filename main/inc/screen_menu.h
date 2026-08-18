@@ -109,6 +109,7 @@ typedef enum {
 
     /* Level 3 – Sensor Settings */
     PAGE_PH_SETTINGS,
+    PAGE_PH_HEALTH,
     PAGE_DO_SETTINGS,
     PAGE_CALIBRATION,
     PAGE_CAL_2PT,

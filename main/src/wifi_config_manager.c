@@ -1,5 +1,6 @@
 #include "wifi_config_manager.h"
-
+#include <stdlib.h>
+#include <string.h>
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -61,6 +62,71 @@ static void prv_align_ap_channel_with_sta(void)
 #endif
 }
 
+static bool prv_load_wifi_list(saved_wifi_list_t *list_out)
+{
+    if (list_out == NULL) return false;
+    memset(list_out, 0, sizeof(saved_wifi_list_t));
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("sys_cfg", NVS_READONLY, &handle);
+    if (err != ESP_OK) return false;
+
+    size_t required_size = sizeof(saved_wifi_list_t);
+    err = nvs_get_blob(handle, "wifi_list", list_out, &required_size);
+    nvs_close(handle);
+
+    if (err == ESP_OK && list_out->count > 0 && list_out->count <= MAX_SAVED_WIFI) {
+        return true;
+    }
+
+    // Migration / Fallback: Try legacy single "ssid" & "pass" keys
+    char legacy_ssid[32] = {0};
+    char legacy_pass[64] = {0};
+    err = nvs_open("sys_cfg", NVS_READONLY, &handle);
+    if (err == ESP_OK) {
+        size_t s_sz = sizeof(legacy_ssid);
+        size_t p_sz = sizeof(legacy_pass);
+        esp_err_t s_err = nvs_get_str(handle, "ssid", legacy_ssid, &s_sz);
+        nvs_get_str(handle, "pass", legacy_pass, &p_sz);
+        nvs_close(handle);
+
+        if (s_err == ESP_OK && legacy_ssid[0] != '\0') {
+            ESP_LOGI(WIFI_CFG_TAG, "Migrating legacy NVS wifi credentials (%s) to wifi_list blob...", legacy_ssid);
+            strncpy(list_out->items[0].ssid, legacy_ssid, sizeof(list_out->items[0].ssid) - 1);
+            strncpy(list_out->items[0].pass, legacy_pass, sizeof(list_out->items[0].pass) - 1);
+            list_out->count = 1;
+
+            if (nvs_open("sys_cfg", NVS_READWRITE, &handle) == ESP_OK) {
+                nvs_set_blob(handle, "wifi_list", list_out, sizeof(saved_wifi_list_t));
+                nvs_commit(handle);
+                nvs_close(handle);
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool prv_save_wifi_list(const saved_wifi_list_t *list)
+{
+    if (list == NULL) return false;
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("sys_cfg", NVS_READWRITE, &handle);
+    if (err != ESP_OK) return false;
+
+    err = nvs_set_blob(handle, "wifi_list", list, sizeof(saved_wifi_list_t));
+    if (err == ESP_OK) {
+        if (list->count > 0 && list->items[0].ssid[0] != '\0') {
+            nvs_set_str(handle, "ssid", list->items[0].ssid);
+            nvs_set_str(handle, "pass", list->items[0].pass);
+        }
+        nvs_commit(handle);
+    }
+    nvs_close(handle);
+    return (err == ESP_OK);
+}
+
 static void prv_slow_retry_task(void *pvParameters)
 {
     (void)pvParameters;
@@ -71,34 +137,99 @@ static void prv_slow_retry_task(void *pvParameters)
         if(s_allow_sta_connect && !Sys_Info.isWifiConnected)
         {
             slow_count++;
-            if (slow_count % 6 == 0)
-            {
-                // Sau 60s thử lại thất bại -> Thực hiện reset driver clean để xóa cache BSSID/Kênh cũ
-                ESP_LOGW(WIFI_CFG_TAG, "Slow retry threshold reached (60s). Performing clean disconnect & config re-apply...");
-                s_allow_sta_connect = false;
-                esp_wifi_disconnect();
-                vTaskDelay(pdMS_TO_TICKS(300));
+            
+            s_allow_sta_connect = false;
+            esp_wifi_disconnect();
+            vTaskDelay(pdMS_TO_TICKS(300));
 
-                wifi_config_t wifi_config = {0};
-                wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-                wifi_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
-                wifi_config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
-                wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
-                if (s_pending_ssid[0] != '\0')
-                {
-                    strncpy((char *)wifi_config.sta.ssid, s_pending_ssid, sizeof(wifi_config.sta.ssid) - 1);
-                    strncpy((char *)wifi_config.sta.password, s_pending_pass, sizeof(wifi_config.sta.password) - 1);
-                    esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-                }
-                s_retry_num = 0; // Reset đếm retry để quay lại đợt Fast Retry nhạy bén
-                s_allow_sta_connect = true;
-                esp_wifi_connect();
-            }
-            else
+            // Quét và tìm kiếm trong danh sách các Wi-Fi đã lưu ở NVS
+            saved_wifi_list_t *saved_list = calloc(1, sizeof(saved_wifi_list_t));
+            if (saved_list != NULL)
             {
-                ESP_LOGI(WIFI_CFG_TAG, "Slow retry connect (%lu/6)...", (unsigned long)(slow_count % 6));
-                esp_wifi_connect();
+                if (prv_load_wifi_list(saved_list) && saved_list->count > 0)
+                {
+                    ESP_LOGI(WIFI_CFG_TAG, "Multi-AP Fallback: Scanning for %d saved Wi-Fi networks...", saved_list->count);
+                    
+                    wifi_config_manager_trigger_scan();
+                    int wait_cnt = 0;
+                    while (wifi_config_manager_get_scan_state() == WIFI_SCAN_STATE_SCANNING && wait_cnt < 40)
+                    {
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                        wait_cnt++;
+                    }
+
+                    if (wifi_config_manager_get_scan_state() == WIFI_SCAN_STATE_DONE)
+                    {
+                        wifi_ap_record_t *ap_records = calloc(MAX_SCAN_APS, sizeof(wifi_ap_record_t));
+                        if (ap_records != NULL)
+                        {
+                            uint16_t num_ap = wifi_config_manager_get_scan_results(ap_records, MAX_SCAN_APS);
+
+                            if (num_ap > 0) {
+                                int best_match_idx = -1;
+                                int best_rssi = -100;
+                                
+                                for (uint16_t i = 0; i < num_ap; i++) {
+                                    for (uint8_t j = 0; j < saved_list->count; j++) {
+                                        if (strcmp((char *)ap_records[i].ssid, saved_list->items[j].ssid) == 0) {
+                                            if (ap_records[i].rssi >= -85 && ap_records[i].rssi > best_rssi) {
+                                                best_rssi = ap_records[i].rssi;
+                                                best_match_idx = j;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if (best_match_idx >= 0) {
+                                    ESP_LOGI(WIFI_CFG_TAG, "Fallback found known Wi-Fi AP: '%s' (RSSI: %d dBm). Switching target...",
+                                             saved_list->items[best_match_idx].ssid, best_rssi);
+                                    strncpy(s_pending_ssid, saved_list->items[best_match_idx].ssid, sizeof(s_pending_ssid) - 1);
+                                    strncpy(s_pending_pass, saved_list->items[best_match_idx].pass, sizeof(s_pending_pass) - 1);
+
+                                    if (best_match_idx > 0) {
+                                        saved_wifi_item_t temp = saved_list->items[best_match_idx];
+                                        for (int i = best_match_idx; i > 0; i--) {
+                                            saved_list->items[i] = saved_list->items[i - 1];
+                                        }
+                                        saved_list->items[0] = temp;
+                                        prv_save_wifi_list(saved_list);
+                                        ESP_LOGI(WIFI_CFG_TAG, "Promoted fallback SSID '%s' to primary saved Wi-Fi in NVS", s_pending_ssid);
+                                    }
+                                } else {
+                                    ESP_LOGW(WIFI_CFG_TAG, "Fallback scan found no known AP with RSSI >= -85dBm");
+                                }
+                            }
+                            free(ap_records);
+                        }
+                    }
+                    else
+                    {
+                        ESP_LOGE(WIFI_CFG_TAG, "Fallback scan failed or timed out");
+                    }
+                }
+                free(saved_list);
             }
+
+
+
+            ESP_LOGI(WIFI_CFG_TAG, "Slow retry connect (%lu) to SSID: %s...", (unsigned long)slow_count, s_pending_ssid);
+
+            wifi_config_t wifi_config = {0};
+            wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+            wifi_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
+            wifi_config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+            wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+            if (s_pending_ssid[0] != '\0')
+            {
+                strncpy((char *)wifi_config.sta.ssid, s_pending_ssid, sizeof(wifi_config.sta.ssid) - 1);
+                strncpy((char *)wifi_config.sta.password, s_pending_pass, sizeof(wifi_config.sta.password) - 1);
+                esp_wifi_disconnect();
+                vTaskDelay(pdMS_TO_TICKS(200));
+                esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            }
+            s_retry_num = 0;
+            s_allow_sta_connect = true;
+            esp_wifi_connect();
         }
         else
         {
@@ -107,6 +238,7 @@ static void prv_slow_retry_task(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(WIFI_SLOW_RETRY_INTERVAL_MS));
     }
 }
+
 
 static void prv_wifi_connect(const char *ssid, const char *pass)
 {
@@ -310,23 +442,32 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
     {
         Sys_Info.isWifiConnected = false;
         wifi_event_sta_disconnected_t *dis_evt = (wifi_event_sta_disconnected_t *)event_data;
-        ESP_LOGW(WIFI_CFG_TAG, "WiFi STA Disconnected! Reason code: %d", dis_evt ? dis_evt->reason : -1);
+        uint8_t reason = dis_evt ? dis_evt->reason : 0;
+        ESP_LOGW(WIFI_CFG_TAG, "WiFi STA Disconnected! Reason code: %d", reason);
 
         if(s_allow_sta_connect)
         {
+            // Nếu phát hiện sai/đổi mật khẩu (WIFI_REASON_AUTH_FAIL = 4 hoặc WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT = 15)
+            // thì lập tức kích hoạt fallback scan chứ không cố kết nối lại mật khẩu bị lỗi nữa!
+            if (reason == WIFI_REASON_AUTH_FAIL || reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT) {
+                ESP_LOGW(WIFI_CFG_TAG, "Auth failure/Timeout detected for SSID: %s. Forcing fallback scan...", s_pending_ssid);
+                s_retry_num = EXAMPLE_ESP_MAXIMUM_RETRY;
+            }
+
             if(s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY)
             {
                 esp_wifi_connect();
                 s_retry_num++;
-                ESP_LOGI(WIFI_CFG_TAG, "Fast retry %d/%d", s_retry_num, EXAMPLE_ESP_MAXIMUM_RETRY);
+                ESP_LOGI(WIFI_CFG_TAG, "Fast retry %d/%d for SSID: %s", s_retry_num, EXAMPLE_ESP_MAXIMUM_RETRY, s_pending_ssid);
             }
             else
             {
                 if(s_slow_retry_task == NULL)
                 {
-                    xTaskCreatePinnedToCore(prv_slow_retry_task, "wifi_slow_retry", 3072, NULL, 3, &s_slow_retry_task, 0);
+                    xTaskCreatePinnedToCore(prv_slow_retry_task, "wifi_slow_retry", 5120, NULL, 3, &s_slow_retry_task, 0);
                 }
-                ESP_LOGI(WIFI_CFG_TAG, "Switch to slow retry every %d s", WIFI_SLOW_RETRY_INTERVAL_MS/1000);
+
+                ESP_LOGI(WIFI_CFG_TAG, "Switch to multi-AP fallback scan every %d s", WIFI_SLOW_RETRY_INTERVAL_MS/1000);
             }
         }
     }
@@ -335,7 +476,8 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
         s_retry_num = 0;
         Sys_Info.isWifiConnected = true;
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(WIFI_CFG_TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(WIFI_CFG_TAG, "Got IP: " IPSTR " for SSID: %s", IP2STR(&event->ip_info.ip), s_pending_ssid);
+
         prv_align_ap_channel_with_sta();
         prv_mdns_init(); // Gọi lại để cập nhật/phát sóng tên miền trên interface STA khi có IP mới
     }
@@ -409,26 +551,18 @@ uint16_t wifi_config_manager_get_scan_results(wifi_ap_record_t *out_records, uin
 
 bool wifi_config_manager_load(char *ssid_out, size_t ssid_len, char *pass_out, size_t pass_len)
 {
-    nvs_handle_t my_handle;
-    esp_err_t err;
-    bool success = false;
-
-    err = nvs_open("sys_cfg", NVS_READONLY, &my_handle);
-    if (err != ESP_OK) return false;
+    saved_wifi_list_t list = {0};
+    if (!prv_load_wifi_list(&list) || list.count == 0) return false;
 
     if (ssid_out != NULL && ssid_len > 0) {
-        size_t required_size = ssid_len;
-        err = nvs_get_str(my_handle, "ssid", ssid_out, &required_size);
-        if (err == ESP_OK) success = true;
+        strncpy(ssid_out, list.items[0].ssid, ssid_len - 1);
+        ssid_out[ssid_len - 1] = '\0';
     }
-
     if (pass_out != NULL && pass_len > 0) {
-        size_t required_size = pass_len;
-        err = nvs_get_str(my_handle, "pass", pass_out, &required_size);
+        strncpy(pass_out, list.items[0].pass, pass_len - 1);
+        pass_out[pass_len - 1] = '\0';
     }
-
-    nvs_close(my_handle);
-    return success;
+    return true;
 }
 
 bool wifi_config_manager_save(const char *ssid, const char *pass)
@@ -437,23 +571,42 @@ bool wifi_config_manager_save(const char *ssid, const char *pass)
         return false;
     }
 
-    nvs_handle_t my_handle;
-    esp_err_t err;
+    saved_wifi_list_t list = {0};
+    prv_load_wifi_list(&list);
 
-    err = nvs_open("sys_cfg", NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) return false;
-
-    err = nvs_set_str(my_handle, "ssid", ssid);
-    if (err == ESP_OK && pass != NULL) {
-        err = nvs_set_str(my_handle, "pass", pass);
+    int existing_idx = -1;
+    for (uint8_t i = 0; i < list.count; i++) {
+        if (strcmp(list.items[i].ssid, ssid) == 0) {
+            existing_idx = i;
+            break;
+        }
     }
-    
-    if (err == ESP_OK) {
-        err = nvs_commit(my_handle);
-    }
-    nvs_close(my_handle);
 
-    if (err != ESP_OK) return false;
+    saved_wifi_item_t new_item = {0};
+    strncpy(new_item.ssid, ssid, sizeof(new_item.ssid) - 1);
+    if (pass != NULL) {
+        strncpy(new_item.pass, pass, sizeof(new_item.pass) - 1);
+    }
+
+    if (existing_idx >= 0) {
+        // Cập nhật mật khẩu mới và đưa lên đầu danh sách MRU
+        for (int i = existing_idx; i > 0; i--) {
+            list.items[i] = list.items[i - 1];
+        }
+        list.items[0] = new_item;
+    } else {
+        // Mạng Wi-Fi mới: Đẩy các mạng cũ xuống, chèn mạng mới vào vị trí 0
+        uint8_t shift_cnt = (list.count < MAX_SAVED_WIFI) ? list.count : (MAX_SAVED_WIFI - 1);
+        for (int i = shift_cnt; i > 0; i--) {
+            list.items[i] = list.items[i - 1];
+        }
+        list.items[0] = new_item;
+        if (list.count < MAX_SAVED_WIFI) {
+            list.count++;
+        }
+    }
+
+    if (!prv_save_wifi_list(&list)) return false;
 
     strncpy(s_pending_ssid, ssid, sizeof(s_pending_ssid) - 1);
     if (pass != NULL) {
@@ -464,10 +617,45 @@ bool wifi_config_manager_save(const char *ssid, const char *pass)
 
 bool wifi_config_manager_clear(void)
 {
+    return wifi_config_manager_clear_all();
+}
+
+bool wifi_config_manager_get_list(saved_wifi_list_t *out_list)
+{
+    return prv_load_wifi_list(out_list);
+}
+
+bool wifi_config_manager_remove_entry(const char *ssid)
+{
+    if (ssid == NULL || ssid[0] == '\0') return false;
+    saved_wifi_list_t list = {0};
+    if (!prv_load_wifi_list(&list)) return false;
+
+    int found_idx = -1;
+    for (uint8_t i = 0; i < list.count; i++) {
+        if (strcmp(list.items[i].ssid, ssid) == 0) {
+            found_idx = i;
+            break;
+        }
+    }
+    if (found_idx < 0) return false;
+
+    for (uint8_t i = found_idx; i < list.count - 1; i++) {
+        list.items[i] = list.items[i + 1];
+    }
+    list.count--;
+    memset(&list.items[list.count], 0, sizeof(saved_wifi_item_t));
+
+    return prv_save_wifi_list(&list);
+}
+
+bool wifi_config_manager_clear_all(void)
+{
     nvs_handle_t my_handle;
     esp_err_t err = nvs_open("sys_cfg", NVS_READWRITE, &my_handle);
     if (err != ESP_OK) return false;
 
+    nvs_erase_key(my_handle, "wifi_list");
     nvs_erase_key(my_handle, "ssid");
     nvs_erase_key(my_handle, "pass");
     nvs_commit(my_handle);
@@ -570,9 +758,12 @@ void wifi_config_manager_finish_scan(void)
         ESP_LOGI(WIFI_CFG_TAG, "Resuming auto-connect after WiFi scan...");
         s_allow_sta_connect = true;
         s_retry_num = 0;
+        esp_wifi_disconnect();
+        vTaskDelay(pdMS_TO_TICKS(200));
         esp_wifi_connect();
     }
 }
+
 
 
 bool wifi_config_manager_init(void)

@@ -15,10 +15,26 @@
 
 
 
+#define MAX_SAVED_WIFI 3
+
+typedef struct {
+    char ssid[32];
+    char pass[64];
+    uint32_t last_connected;
+} saved_wifi_item_t;
+
+typedef struct {
+    uint8_t count;
+    saved_wifi_item_t items[MAX_SAVED_WIFI];
+} saved_wifi_list_t;
+
 bool wifi_config_manager_init(void);
 bool wifi_config_manager_load(char *ssid_out, size_t ssid_len, char *pass_out, size_t pass_len);
 bool wifi_config_manager_save(const char *ssid, const char *pass);
 bool wifi_config_manager_clear(void);
+bool wifi_config_manager_get_list(saved_wifi_list_t *out_list);
+bool wifi_config_manager_remove_entry(const char *ssid);
+bool wifi_config_manager_clear_all(void);
 bool azure_config_manager_load(char *host, size_t host_len, char *dev, size_t dev_len, char *sym, size_t sym_len);
 bool azure_config_manager_save(const char *host, const char *dev, const char *sym);
 bool azure_config_manager_clear(void);

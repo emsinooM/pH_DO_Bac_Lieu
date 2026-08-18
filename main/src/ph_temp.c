@@ -441,3 +441,32 @@ bool Reset_PH_Calibration(void) {
     Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.ph_valid, s_sensor_status.temperature, s_sensor_status.temp_valid, s_sensor_status.v_probe_mv);
     return ok;
 }
+
+PhSensorHealth_t Get_PH_Sensor_Health(void) {
+    PhSensorHealth_t health;
+    memset(&health, 0, sizeof(health));
+
+    health.is_calibrated = ph_cal.is_calibrated;
+    health.zero_offset_mv = ph_cal.ph7_voltage_mv;
+
+    float t7_k = ph_cal.ph7_temp_c + 273.15f;
+    float t4_k = ph_cal.ph4_temp_c + 273.15f;
+    float u7 = ph_cal.ph7_voltage_mv / t7_k;
+    float u4 = ph_cal.ph4_voltage_mv / t4_k;
+    float du_low = fabsf(u7 - u4);
+
+    health.sens_mv_per_ph = (du_low * 298.15f) / 3.00f; // mV/pH ở 25°C
+    health.slope_pct = (health.sens_mv_per_ph / 59.16f) * 100.0f;
+
+    // Điện cực được coi là khỏe (Healthy) khi:
+    // 1. Hệ thống đã hiệu chuẩn thành công
+    // 2. Độ nhạy Slope >= 80.0%
+    // 3. Điểm lệch 0 (Zero Offset) trong khoảng [-30.0mV, +30.0mV]
+    if (health.is_calibrated && health.slope_pct >= 80.0f && fabsf(health.zero_offset_mv) <= 30.0f) {
+        health.is_healthy = true;
+    } else {
+        health.is_healthy = false;
+    }
+
+    return health;
+}
