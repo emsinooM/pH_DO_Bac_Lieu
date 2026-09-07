@@ -1074,6 +1074,7 @@ static void lcd_draw_measurement_numbers(const char *ph_str, const char *do_str)
     uint8_t block_w = do_w + 5 + unit_w;
     uint8_t do_x = (LCD_WIDTH - block_w) / 2;
     LCD_DrawString3x(do_x, 17, do_str, LCD_COLOR_ON);
+    LCD_DrawString(do_x + do_w + 5, 19, "DO", LCD_COLOR_ON);
     LCD_DrawString(do_x + do_w + 5, 30, "mg/L", LCD_COLOR_ON);
   } else {
     const uint8_t split_x = 64;
@@ -1086,16 +1087,16 @@ static void lcd_draw_measurement_numbers(const char *ph_str, const char *do_str)
     const uint8_t unit_y = 34;
 
     /* Clear panel display area to eliminate leftover pixel artifacts */
-    LCD_FillRect(left_x, area_y, panel_w, area_bottom - area_y - 1, LCD_COLOR_OFF);
-    LCD_FillRect(right_x, area_y, panel_w, area_bottom - area_y - 1, LCD_COLOR_OFF);
+    LCD_FillRect(left_x, area_y, panel_w, area_bottom - area_y, LCD_COLOR_OFF);
+    LCD_FillRect(right_x, area_y, panel_w, area_bottom - area_y, LCD_COLOR_OFF);
 
     LCD_DrawVLine(split_x - 1, area_y, area_bottom - area_y + 1, LCD_COLOR_ON);
     LCD_DrawVLine(split_x, area_y, area_bottom - area_y + 1, LCD_COLOR_ON);
-    LCD_DrawHLine(0, area_bottom - 1, 128, LCD_COLOR_ON);
-    LCD_DrawHLine(0, area_bottom, 128, LCD_COLOR_ON);
+    LCD_DrawHLine(left_x, area_bottom, panel_w, LCD_COLOR_ON);
+    LCD_DrawHLine(right_x, area_bottom, panel_w, LCD_COLOR_ON);
 
     lcd_draw_dual_metric(left_x, panel_w, val_y, unit_y, ph_str, "pH", false);
-    lcd_draw_dual_metric(right_x, panel_w, val_y, unit_y, do_str, "mg/L", false);
+    lcd_draw_dual_metric(right_x, panel_w, val_y, unit_y, do_str, "DO mg/L", false);
   }
 }
 
@@ -1429,18 +1430,18 @@ static void lcd_demo_task(void *arg) {
   }
 }
 
-__attribute__((unused)) void LCD_Start_Task(void) {
+void LCD_Start_Task(void) {
   xTaskCreatePinnedToCore(lcd_demo_task, "LCD_Task", 4096, NULL, 5, NULL, 1);
 }
 
-__attribute__((unused)) void screen_update_values(float ph, float temp) {
+void screen_update_values(float ph, float temp) {
   s_real_ph = ph;
   s_real_temp = temp;
   g_lcd_need_redraw =
       true; // Báo hiệu để task vẽ lại màn hình ngay khi có dữ liệu mới
 }
 
-__attribute__((unused)) void LCD_GetFramebuffer(uint8_t *dest) {
+void LCD_GetFramebuffer(uint8_t *dest) {
   if (dest != NULL) {
     memcpy(dest, fb, sizeof(fb));
   }

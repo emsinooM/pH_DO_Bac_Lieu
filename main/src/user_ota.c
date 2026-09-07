@@ -312,9 +312,3 @@ void User_Ota_Trigger(const char *url)
         esp_restart();
     }
 }
-
-
-
-
-
-

@@ -1226,6 +1226,8 @@ static uint8_t s_btn_debounce_counter[BTN_COUNT] = {0};
 static bool    s_btn_state[BTN_COUNT] = {false};
 static bool    s_btn_prev_state[BTN_COUNT] = {false};
 static volatile bool s_btn_simulated[BTN_COUNT] = {false};
+static TickType_t s_btn_press_tick[BTN_COUNT] = {0};
+static TickType_t s_btn_last_repeat_tick[BTN_COUNT] = {0};
 
 /**
  * @brief  Đọc trạng thái GPIO và chống rung (debounce) cho các nút bấm
@@ -1245,6 +1247,13 @@ static void poll_and_debounce_buttons(void)
             if (s_btn_debounce_counter[i] >= 2) {
                 s_btn_state[i] = raw;
                 s_btn_debounce_counter[i] = 0;
+                if (raw) {
+                    s_btn_press_tick[i] = xTaskGetTickCount();
+                    s_btn_last_repeat_tick[i] = s_btn_press_tick[i];
+                } else {
+                    s_btn_press_tick[i] = 0;
+                    s_btn_last_repeat_tick[i] = 0;
+                }
             }
         } else {
             s_btn_debounce_counter[i] = 0;
@@ -1285,11 +1294,55 @@ static void poll_and_debounce_buttons(void)
  */
 static bool btn_edge(btn_idx_t idx)
 {
+    if (idx >= BTN_COUNT) return false;
     if (s_btn_simulated[idx]) {
         s_btn_simulated[idx] = false;
         return true;
     }
     return s_btn_state[idx] && !s_btn_prev_state[idx];
+}
+
+/**
+ * @brief  Trả về true nếu nút vừa nhấn (edge) HOẶC đang nhấn giữ tự động lặp (auto-repeat)
+ * @param  idx: Nút cần kiểm tra
+ * @param  initial_delay_ms: Thời gian giữ tối thiểu trước khi bắt đầu lặp (ms)
+ * @param  repeat_interval_ms: Chu kỳ giữa các lần lặp (ms)
+ */
+static __attribute__((unused)) bool btn_edge_or_repeat(btn_idx_t idx, uint32_t initial_delay_ms, uint32_t repeat_interval_ms)
+{
+    if (idx >= BTN_COUNT) return false;
+
+    // Giả lập
+    if (s_btn_simulated[idx]) {
+        s_btn_simulated[idx] = false;
+        return true;
+    }
+
+    // Nhấn lần đầu (cạnh lên)
+    if (s_btn_state[idx] && !s_btn_prev_state[idx]) {
+        return true;
+    }
+
+    // Nhấn giữ (auto-repeat) với tốc độ ổn định
+    if (s_btn_state[idx] && s_btn_press_tick[idx] != 0) {
+        TickType_t now = xTaskGetTickCount();
+        TickType_t elapsed_press = (now >= s_btn_press_tick[idx]) ? 
+                                   (now - s_btn_press_tick[idx]) : 
+                                   (portMAX_DELAY - s_btn_press_tick[idx] + now);
+
+        if (elapsed_press >= pdMS_TO_TICKS(initial_delay_ms)) {
+            TickType_t elapsed_repeat = (now >= s_btn_last_repeat_tick[idx]) ? 
+                                        (now - s_btn_last_repeat_tick[idx]) : 
+                                        (portMAX_DELAY - s_btn_last_repeat_tick[idx] + now);
+
+            if (elapsed_repeat >= pdMS_TO_TICKS(repeat_interval_ms)) {
+                s_btn_last_repeat_tick[idx] = now;
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 static void menu_handle_history_log_buttons(void)
@@ -1532,16 +1585,13 @@ static void menu_render_wifi_pass_entry(void)
     snprintf(ssid_line, sizeof(ssid_line), "SSID: %.14s", s_wifi_selected_ssid);
     LCD_DrawString(2, 13, ssid_line, LCD_COLOR_ON);
 
-    char pass_line[32];
-    char masked_pass[20] = {0};
-    uint8_t show_len = (s_wifi_pass_len > 13) ? 13 : s_wifi_pass_len;
-
-    for (uint8_t i = 0; i < show_len; i++) {
-        masked_pass[i] = '*';
+    char pass_line[80];
+    if (s_wifi_pass_len <= 14) {
+        snprintf(pass_line, sizeof(pass_line), "Pass: %s_", s_wifi_pass_input);
+    } else {
+        // Mật khẩu dài hơn 14 ký tự: cuộn hiển thị 12 ký tự đuôi mới nhất
+        snprintf(pass_line, sizeof(pass_line), "Pass: ..%s_", &s_wifi_pass_input[s_wifi_pass_len - 12]);
     }
-    masked_pass[show_len] = '\0';
-
-    snprintf(pass_line, sizeof(pass_line), "Pass: %s_", masked_pass);
     LCD_DrawString(2, 23, pass_line, LCD_COLOR_ON);
 
     char cur_char = s_char_picker_set[s_char_picker_set_idx];

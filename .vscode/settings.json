@@ -9,5 +9,11 @@
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
-  "C_Cpp_Runner.msvcBatchPath": ""
+  "C_Cpp_Runner.msvcBatchPath": "",
+  "clangd.arguments": [
+    "--compile-commands-dir=build",
+    "--query-driver=C:/Espressif/tools/**/bin/*gcc*,C:/Espressif/tools/**/bin/*g++*",
+    "--header-insertion=never",
+    "--background-index"
+  ]
 }

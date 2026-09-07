@@ -36,6 +36,7 @@ static httpd_handle_t start_webserver(void)
 
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.stack_size = 8192; // Tăng stack size lên 8KB
 
     config.lru_purge_enable = true;
     config.max_open_sockets = 5;

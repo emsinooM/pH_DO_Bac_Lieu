@@ -27,7 +27,7 @@
 
 static const char *PORTAL_TAG = "web_portal";
 
-#define WEB_LOG_BUFFER_SIZE (16 * 1024)
+#define WEB_LOG_BUFFER_SIZE (4 * 1024)
 static char *g_web_log_buf = NULL;
 static size_t g_web_log_head = 0;
 static size_t g_web_log_count = 0;
@@ -56,31 +56,26 @@ static int web_log_vprintf(const char *fmt, va_list args) {
   }
   s_in_log_hook = true;
 
-  static char temp_buf[256];
+  char local_buf[256];
   va_list args_copy2;
   va_copy(args_copy2, args);
-  int len = vsnprintf(temp_buf, sizeof(temp_buf), fmt, args_copy2);
+  int len = vsnprintf(local_buf, sizeof(local_buf), fmt, args_copy2);
   va_end(args_copy2);
 
-  if (len > 0) {
-    if (g_web_log_buf == NULL) {
-      g_web_log_buf = (char *)malloc(WEB_LOG_BUFFER_SIZE);
-    }
-    if (g_web_log_buf != NULL) {
-      size_t copy_len = (len < (int)sizeof(temp_buf)) ? (size_t)len : (sizeof(temp_buf) - 1);
-      portENTER_CRITICAL(&g_web_log_spinlock);
-      for (size_t i = 0; i < copy_len; i++) {
-        char c = temp_buf[i];
-        if (c != '\0') {
-          g_web_log_buf[g_web_log_head] = c;
-          g_web_log_head = (g_web_log_head + 1) % WEB_LOG_BUFFER_SIZE;
-          if (g_web_log_count < WEB_LOG_BUFFER_SIZE) {
-            g_web_log_count++;
-          }
+  if (len > 0 && g_web_log_buf != NULL) {
+    size_t copy_len = (len < (int)sizeof(local_buf)) ? (size_t)len : (sizeof(local_buf) - 1);
+    portENTER_CRITICAL(&g_web_log_spinlock);
+    for (size_t i = 0; i < copy_len; i++) {
+      char c = local_buf[i];
+      if (c != '\0') {
+        g_web_log_buf[g_web_log_head] = c;
+        g_web_log_head = (g_web_log_head + 1) % WEB_LOG_BUFFER_SIZE;
+        if (g_web_log_count < WEB_LOG_BUFFER_SIZE) {
+          g_web_log_count++;
         }
       }
-      portEXIT_CRITICAL(&g_web_log_spinlock);
     }
+    portEXIT_CRITICAL(&g_web_log_spinlock);
   }
 
   s_in_log_hook = false;
@@ -876,13 +871,9 @@ static const char *portal_html =
     "fetch('/scan').then(r=>r.json()).then(list=>{"
     "const sel=document.getElementById('ssid');sel.innerHTML='';"
     "list.forEach(s=>{"
-    "const o=document.createElement('option');"
-    "if(typeof s==='object'&&s!==null){"
-    "o.value=s.ssid;o.text=s.ssid+' ('+s.rssi+' dBm)';"
-    "}else{"
-    "o.value=s;o.text=s;"
-    "}"
-    "sel.add(o);});"
+    "const name=(typeof s==='object'&&s.ssid)?s.ssid:s;"
+    "const rssi=(typeof s==='object'&&s.rssi!=null)?(' ('+s.rssi+' dBm)'):'';"
+    "const o=document.createElement('option');o.value=name;o.text=name+rssi;sel.add(o);});"
     "setMsg('Scan complete');"
     "}).catch(()=>setMsg('Scan failed')).finally(()=>setLoading(btn,false));"
     "}"
@@ -1691,13 +1682,20 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
     wifi_config_manager_finish_scan();
     return ESP_FAIL;
   }
+
+  // Dùng mảng tĩnh 16 phần tử để giữ an toàn bộ nhớ Stack và Heap  
+  static wifi_ap_record_t ap_records[16];
+  memset(ap_records, 0, sizeof(ap_records));
+
   // Đọc danh sách AP từ bộ đệm đã được wifi_config_manager lưu giữ an toàn
-  wifi_ap_record_t ap_records[16];
   uint16_t ap_num = wifi_config_manager_get_scan_results(ap_records, 16);
+  wifi_config_manager_finish_scan();
+
   cJSON *arr = cJSON_CreateArray();
+
   if (ap_num > 0) {
     // 1. Sắp xếp danh sách AP theo tín hiệu RSSI giảm dần (sóng mạnh lên trước)
-    for (int i = 0; i < ap_num - 1; i++) {
+    for (int i = 0; i < (int) ap_num - 1; i++) {
       for (int j = i + 1; j < ap_num; j++) {
         if (ap_records[j].rssi > ap_records[i].rssi) {
           wifi_ap_record_t temp = ap_records[i];
@@ -1706,19 +1704,23 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
         }
       }
     }
+
     // 2. Lọc trùng SSID và lọc SSID rỗng
     for (uint16_t i = 0; i < ap_num; i++) {
       if (ap_records[i].ssid[0] == '\0') continue;
+
       bool duplicate = false;
       int arr_size = cJSON_GetArraySize(arr);
       for (int k = 0; k < arr_size; k++) {
         cJSON *item = cJSON_GetArrayItem(arr, k);
         cJSON *existing_ssid = cJSON_GetObjectItem(item, "ssid");
-        if (existing_ssid && existing_ssid->valuestring && strcmp(existing_ssid->valuestring, (const char *)ap_records[i].ssid) == 0) {
+        if (existing_ssid && existing_ssid->valuestring && 
+          strcmp(existing_ssid->valuestring, (const char *)ap_records[i].ssid) == 0) {
           duplicate = true;
           break;
         }
       }
+
       if (!duplicate) {
         cJSON *obj = cJSON_CreateObject();
         cJSON_AddStringToObject(obj, "ssid", (const char *)ap_records[i].ssid);
@@ -1727,8 +1729,10 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
       }
     }
   }
+
   char *out = cJSON_PrintUnformatted(arr);
   cJSON_Delete(arr);
+  
   if (out == NULL) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json fail");
     return ESP_FAIL;
