@@ -398,6 +398,11 @@ void TLS_Socket_Disconnect( NetworkContext_t * pNetworkContext )
 
     EspTlsTransportParams_t * pxEspTlsTransport = (EspTlsTransportParams_t *)pxTlsParams->xSSLContext;
 
+    if (pxEspTlsTransport == NULL)
+    {
+        return;
+    }
+
     /* Attempting to terminate TLS connection. */
     esp_transport_close( pxEspTlsTransport->xTransport );
 
@@ -435,6 +440,12 @@ int32_t TLS_Socket_Recv( NetworkContext_t * pNetworkContext,
     }
 
     EspTlsTransportParams_t * pxEspTlsTransport = (EspTlsTransportParams_t *)pxTlsParams->xSSLContext;
+
+    if (pxEspTlsTransport == NULL)
+    {
+        ESP_LOGE(TAG, "SSL context is NULL, cannot receive.");
+        return eTLSTransportInvalidParameter;
+    }
 
     tlsStatus = esp_transport_read( pxEspTlsTransport->xTransport, pBuffer, xBytesToRecv, pxEspTlsTransport->ulReceiveTimeoutMs );
     if ( tlsStatus < 0 )

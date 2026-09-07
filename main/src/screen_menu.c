@@ -1308,7 +1308,7 @@ static bool btn_edge(btn_idx_t idx)
  * @param  initial_delay_ms: Thời gian giữ tối thiểu trước khi bắt đầu lặp (ms)
  * @param  repeat_interval_ms: Chu kỳ giữa các lần lặp (ms)
  */
-static bool btn_edge_or_repeat(btn_idx_t idx, uint32_t initial_delay_ms, uint32_t repeat_interval_ms)
+static __attribute__((unused)) bool btn_edge_or_repeat(btn_idx_t idx, uint32_t initial_delay_ms, uint32_t repeat_interval_ms)
 {
     if (idx >= BTN_COUNT) return false;
 
@@ -1650,43 +1650,35 @@ static void menu_handle_wifi_pass_entry_buttons(void)
         return;
     }
 
-    if (s_wifi_pass_focus == WIFI_PASS_FOCUS_PICKER) {
-        // Nhấn giữ nút UP hoặc DOWN để cuộn đổi ký tự liên tục
-        if (btn_edge_or_repeat(BTN_IDX_UP, 350, 90)) {
+    if (btn_edge(BTN_IDX_UP)) {
+        if (s_wifi_pass_focus == WIFI_PASS_FOCUS_PICKER) {
             s_char_picker_set_idx = (s_char_picker_set_idx + 1) % CHAR_PICKER_SET_LEN;
-            g_lcd_need_redraw = true;
-        }
-
-        if (btn_edge_or_repeat(BTN_IDX_DOWN, 350, 90)) {
-            s_char_picker_set_idx = (s_char_picker_set_idx + CHAR_PICKER_SET_LEN - 1) % CHAR_PICKER_SET_LEN;
-            g_lcd_need_redraw = true;
-        }
-    } else {
-        if (btn_edge(BTN_IDX_UP)) {
+        } else {
             s_wifi_pass_focus = (wifi_pass_focus_t)((s_wifi_pass_focus + WIFI_PASS_FOCUS_COUNT - 1) % WIFI_PASS_FOCUS_COUNT);
-            g_lcd_need_redraw = true;
         }
-
-        if (btn_edge(BTN_IDX_DOWN)) {
-            s_wifi_pass_focus = (wifi_pass_focus_t)((s_wifi_pass_focus + 1) % WIFI_PASS_FOCUS_COUNT);
-            g_lcd_need_redraw = true;
-        }
+        g_lcd_need_redraw = true;
     }
 
-    if (s_wifi_pass_focus == WIFI_PASS_FOCUS_DEL) {
-        // Nhấn hoặc giữ ENTER trên nút [DEL] để xóa ký tự nhanh
-        if (btn_edge_or_repeat(BTN_IDX_ENTER, 400, 100)) {
-            if (s_wifi_pass_len > 0) {
-                s_wifi_pass_len--;
-                s_wifi_pass_input[s_wifi_pass_len] = '\0';
-                g_lcd_need_redraw = true;
-            }
+    if (btn_edge(BTN_IDX_DOWN)) {
+        if (s_wifi_pass_focus == WIFI_PASS_FOCUS_PICKER) {
+            s_char_picker_set_idx = (s_char_picker_set_idx + CHAR_PICKER_SET_LEN - 1) % CHAR_PICKER_SET_LEN;
+        } else {
+            s_wifi_pass_focus = (wifi_pass_focus_t)((s_wifi_pass_focus + 1) % WIFI_PASS_FOCUS_COUNT);
         }
-    } else if (btn_edge(BTN_IDX_ENTER)) {
+        g_lcd_need_redraw = true;
+    }
+
+    if (btn_edge(BTN_IDX_ENTER)) {
         if (s_wifi_pass_focus == WIFI_PASS_FOCUS_PICKER) {
             if (s_wifi_pass_len < 64) {
                 s_wifi_pass_input[s_wifi_pass_len] = s_char_picker_set[s_char_picker_set_idx];
                 s_wifi_pass_len++;
+                s_wifi_pass_input[s_wifi_pass_len] = '\0';
+            }
+            g_lcd_need_redraw = true;
+        } else if (s_wifi_pass_focus == WIFI_PASS_FOCUS_DEL) {
+            if (s_wifi_pass_len > 0) {
+                s_wifi_pass_len--;
                 s_wifi_pass_input[s_wifi_pass_len] = '\0';
             }
             g_lcd_need_redraw = true;

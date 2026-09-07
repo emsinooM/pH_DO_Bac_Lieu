@@ -72,7 +72,6 @@ TaskHandle_t Azure_Transmit_Handle;
 TaskHandle_t Azure_Telemetry_Handle;
 TaskHandle_t Azure_Offline_Sync_Handle;
 
-
 /* Declare IoT hub handle */
 IoTHubHandle_t IoTHubHandle;
 
@@ -88,7 +87,6 @@ static volatile bool g_telemetry_active = false;
 static volatile uint32_t g_telemetry_interval_ms = 5000;
 bool bIsOtaActivated = false;
 char g_last_telemetry_payload[512] = {0};
-
 
 bool User_Azure_Get_Telemetry_Active(void) {
     return g_telemetry_active;
@@ -515,14 +513,29 @@ void User_Azure_Connect(void)
     static bool isAzureIotSysInited = false;
     if (!isAzureIotSysInited)
     {
-        configASSERT(AzureIoT_Init() == eAzureIoTSuccess);
+        if (AzureIoT_Init() != eAzureIoTSuccess)
+        {
+            ESP_LOGE("AZURE", "AzureIoT_Init failed. Retrying in 5s...");
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            return;
+        }
         isAzureIotSysInited = true;
     }
 
     ulStatus = prvSetupNetworkCredentials(&xNetworkCredentials);
-    configASSERT(ulStatus == 0);
-
+    if (ulStatus != 0)
+    {
+        ESP_LOGE("AZURE", "prvSetupNetworkCredentials failed (%lu). Retrying in 5s...", (unsigned long)ulStatus);
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        return;
+    }
     xNetworkContext.pParams = &xTlsTransportParams;
+
+    if (xTlsTransportParams.xSSLContext != NULL)
+    {
+        ESP_LOGW("AZURE", "Cleaning up dangling TLS context before new connect...");
+        TLS_Socket_Disconnect(&xNetworkContext);
+    }
 
     if (xAzureSample_IsConnectedToInternet())
     {
@@ -544,7 +557,13 @@ void User_Azure_Connect(void)
 
         /* Init IoT Hub option */
         xResult = AzureIoTHubClient_OptionsInit(&xHubOptions);
-        configASSERT(xResult == eAzureIoTSuccess);
+        if (xResult != eAzureIoTSuccess)
+        {
+            ESP_LOGE("AZURE", "AzureIoTHubClient_OptionsInit failed (%d). Disconnecting and retrying in 5s...", xResult);
+            TLS_Socket_Disconnect(&xNetworkContext);
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            return;
+        }
 
         xHubOptions.pucModuleID = (const uint8_t *)democonfigMODULE_ID;
         xHubOptions.ulModuleIDLength = sizeof(democonfigMODULE_ID) - 1;
@@ -558,7 +577,13 @@ void User_Azure_Connect(void)
                                          ucMQTTMessageBuffer, sizeof(ucMQTTMessageBuffer),
                                          ullGetUnixTime,
                                          &xTransport);
-        configASSERT(xResult == eAzureIoTSuccess);
+        if (xResult != eAzureIoTSuccess)
+        {
+            ESP_LOGE("AZURE", "AzureIoTHubClient_Init failed (%d). Disconnecting and retrying in 5s...", xResult);
+            TLS_Socket_Disconnect(&xNetworkContext);
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            return;
+        }
 
 #ifdef democonfigDEVICE_SYMMETRIC_KEY
         xResult = AzureIoTHubClient_SetSymmetricKey(&xAzureIoTHubClient,
@@ -753,6 +778,11 @@ void User_Azure_Task(void)
         
         if (!Is_System_Internet_Connected())
         {
+            if (IoTHubHandle.isAzureInitialized){
+                ESP_LOGW("Azure", "Wifi mat ket noi! Azure mat ket noi...");
+                IoTHubHandle.isAzureInitialized = false;
+                IoTHubHandle.isNeedReinit = true;
+            }
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
@@ -768,12 +798,12 @@ void User_Azure_Task(void)
             if (xSemaphoreTake(azureMutex, pdMS_TO_TICKS(3000U)) == pdTRUE)
             {
                 IoTHubHandle.isNeedReinit = false;
-                if (IoTHubHandle.isAzureInitialized)
-                {
-                    AzureIoTHubClient_Deinit(&xAzureIoTHubClient);
-                    TLS_Socket_Disconnect(&xNetworkContext);
-                    IoTHubHandle.isAzureInitialized = false;
-                }
+                // if (IoTHubHandle.isAzureInitialized)
+                // {
+                AzureIoTHubClient_Deinit(&xAzureIoTHubClient);
+                TLS_Socket_Disconnect(&xNetworkContext);
+                IoTHubHandle.isAzureInitialized = false;
+                // }
                 xSemaphoreGive(azureMutex);
             }
             else
@@ -792,6 +822,11 @@ void User_Azure_Task(void)
         if (!IoTHubHandle.isAzureInitialized)
         {
             User_Azure_Connect();
+            if (!IoTHubHandle.isAzureInitialized)
+            {
+                vTaskDelay(pdMS_TO_TICKS(5000));
+                continue; // Bỏ qua vòng lặp while(1) con, thử kết nối lại ngay lập tức!
+            }
         }
 
         while (1)
@@ -813,7 +848,7 @@ void User_Azure_Task(void)
                     last_azure_ok_time = now;
                 }
             }
-            if (IoTHubHandle.isNeedReinit || !Is_System_Internet_Connected())
+            if (IoTHubHandle.isNeedReinit || !Is_System_Internet_Connected() || !IoTHubHandle.isAzureInitialized)
             {
                 break;
             }
@@ -853,7 +888,7 @@ static void Azure_Process_Loop_Task(void *pvParameters)
             {
                 ESP_LOGE("AZURE: PROCESS LOOP", "Error code: %d", result);
                 IoTHubHandle.isNeedReinit = true;
-                IoTHubHandle.isAzureInitialized = false;
+                // IoTHubHandle.isAzureInitialized = false;
             }
 
             xSemaphoreGive(azureMutex);
@@ -903,7 +938,7 @@ static void Azure_Transmit_Task(void *pvParameters)
                 {
                     ESP_LOGE("AZURE: TRANSMIT TASK", "Send telemetry failed: %d", result);
                     IoTHubHandle.isNeedReinit = true;
-                    IoTHubHandle.isAzureInitialized = false;
+                    // IoTHubHandle.isAzureInitialized = false;
                 }
                 xSemaphoreGive(azureMutex);
             }
@@ -979,7 +1014,6 @@ static void Azure_Offline_Sync_Task(void *pvParameters)
         uint16_t fetched_count = 0;
 
         if (Fram_Log_Get_Unsynced_Batch(batch_records, 10, &fetched_count) && fetched_count > 0)
-
         {
             cJSON *root = cJSON_CreateObject();
             cJSON *pl = cJSON_CreateObject();
@@ -1048,17 +1082,14 @@ static void Azure_Offline_Sync_Task(void *pvParameters)
                 }
                 cJSON_Delete(root);
             }
-
             vTaskDelay(pdMS_TO_TICKS(500));
         }
-
         else
         {
             vTaskDelay(pdMS_TO_TICKS(2000));
         }
     }
 }
-
 
 static void Azure_Telemetry_Task(void *pvParameters)
 {
@@ -1325,10 +1356,9 @@ static void prv_wifi_change_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
-static void prv_reboot_task(void *pvParameters)
+static void prv_azure_reboot_timer_cb(void *arg)
 {
-    ESP_LOGW("AZURE: REBOOT", "Rebooting in 2s...");
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    ESP_LOGW("AZURE: REBOOT", "Reboot timer fired. Restarting system now...");
     esp_restart();
 }
 
@@ -2020,9 +2050,17 @@ void Azure_Handle_Direct_Method_Data(cJSON *payload, DirectMethodResponse_t *res
             response->payloadLength = snprintf(response->payload, sizeof(response->payload),
                 "Device is rebooting...");
 
-            if (xTaskCreatePinnedToCore(prv_reboot_task, "reboot_task", 2048, NULL, 3, NULL, 0) != pdPASS)
-            {
-                ESP_LOGE("AZURE: REBOOT", "Failed to create reboot task, restarting immediately");
+            const esp_timer_create_args_t timer_args = {
+                .callback = &prv_azure_reboot_timer_cb,
+                .name = "azure_reboot_timer"
+            };
+            esp_timer_handle_t reboot_timer = NULL;
+            if (esp_timer_create(&timer_args, &reboot_timer) == ESP_OK){
+                esp_timer_start_once(reboot_timer, 2000000);
+                ESP_LOGI("AZURE: REBOOT", "Scheduled reboot in 2s");
+            }
+            else{
+                ESP_LOGE("AZURE: REBOOT", "Failed to create reboot timer, restarting immediately");
                 esp_restart();
             }
         }

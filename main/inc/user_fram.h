@@ -78,4 +78,3 @@ void Fram_Log_Clear_All(void);
 uint16_t Fram_Log_Get_Unsynced_Count(void);
 bool Fram_Log_Get_Unsynced_Batch(EnvLogRecord_t *records_out, uint16_t max_records, uint16_t *count_out);
 bool Fram_Log_Commit_Synced_Count(uint16_t count);
-

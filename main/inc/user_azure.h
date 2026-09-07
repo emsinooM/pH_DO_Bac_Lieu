@@ -27,16 +27,13 @@ typedef struct{
 
 }IoTHubHandle_t;
 
-
 extern IoTHubHandle_t IoTHubHandle;
 extern bool bIsOtaActivated;
-
 
 
 typedef struct{
     char payload[2048];
 }TelemetryEvent_t;
-
 
 // typedef struct
 // {

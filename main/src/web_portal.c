@@ -56,31 +56,26 @@ static int web_log_vprintf(const char *fmt, va_list args) {
   }
   s_in_log_hook = true;
 
-  static char temp_buf[256];
+  char local_buf[256];
   va_list args_copy2;
   va_copy(args_copy2, args);
-  int len = vsnprintf(temp_buf, sizeof(temp_buf), fmt, args_copy2);
+  int len = vsnprintf(local_buf, sizeof(local_buf), fmt, args_copy2);
   va_end(args_copy2);
 
-  if (len > 0) {
-    if (g_web_log_buf == NULL) {
-      g_web_log_buf = (char *)malloc(WEB_LOG_BUFFER_SIZE);
-    }
-    if (g_web_log_buf != NULL) {
-      size_t copy_len = (len < (int)sizeof(temp_buf)) ? (size_t)len : (sizeof(temp_buf) - 1);
-      portENTER_CRITICAL(&g_web_log_spinlock);
-      for (size_t i = 0; i < copy_len; i++) {
-        char c = temp_buf[i];
-        if (c != '\0') {
-          g_web_log_buf[g_web_log_head] = c;
-          g_web_log_head = (g_web_log_head + 1) % WEB_LOG_BUFFER_SIZE;
-          if (g_web_log_count < WEB_LOG_BUFFER_SIZE) {
-            g_web_log_count++;
-          }
+  if (len > 0 && g_web_log_buf != NULL) {
+    size_t copy_len = (len < (int)sizeof(local_buf)) ? (size_t)len : (sizeof(local_buf) - 1);
+    portENTER_CRITICAL(&g_web_log_spinlock);
+    for (size_t i = 0; i < copy_len; i++) {
+      char c = local_buf[i];
+      if (c != '\0') {
+        g_web_log_buf[g_web_log_head] = c;
+        g_web_log_head = (g_web_log_head + 1) % WEB_LOG_BUFFER_SIZE;
+        if (g_web_log_count < WEB_LOG_BUFFER_SIZE) {
+          g_web_log_count++;
         }
       }
-      portEXIT_CRITICAL(&g_web_log_spinlock);
     }
+    portEXIT_CRITICAL(&g_web_log_spinlock);
   }
 
   s_in_log_hook = false;
@@ -1669,11 +1664,9 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, "{\"status\":\"unauthorized\"}",
-                    HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "{\"status\":\"unauthorized\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
   }
-
   wifi_config_manager_prepare_scan();
   wifi_scan_config_t scan_config = {
     .ssid = NULL,
@@ -1690,7 +1683,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
-  // Dùng mảng tĩnh 16 phần tử để giữ an toàn bộ nhớ Stack và Heap
+  // Dùng mảng tĩnh 16 phần tử để giữ an toàn bộ nhớ Stack và Heap  
   static wifi_ap_record_t ap_records[16];
   memset(ap_records, 0, sizeof(ap_records));
 
@@ -1702,8 +1695,8 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
 
   if (ap_num > 0) {
     // 1. Sắp xếp danh sách AP theo tín hiệu RSSI giảm dần (sóng mạnh lên trước)
-    for (int i = 0; i < (int)ap_num - 1; i++) {
-      for (int j = i + 1; j < (int)ap_num; j++) {
+    for (int i = 0; i < (int) ap_num - 1; i++) {
+      for (int j = i + 1; j < ap_num; j++) {
         if (ap_records[j].rssi > ap_records[i].rssi) {
           wifi_ap_record_t temp = ap_records[i];
           ap_records[i] = ap_records[j];
@@ -1721,8 +1714,8 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
       for (int k = 0; k < arr_size; k++) {
         cJSON *item = cJSON_GetArrayItem(arr, k);
         cJSON *existing_ssid = cJSON_GetObjectItem(item, "ssid");
-        if (existing_ssid && existing_ssid->valuestring &&
-            strcmp(existing_ssid->valuestring, (const char *)ap_records[i].ssid) == 0) {
+        if (existing_ssid && existing_ssid->valuestring && 
+          strcmp(existing_ssid->valuestring, (const char *)ap_records[i].ssid) == 0) {
           duplicate = true;
           break;
         }
@@ -1739,12 +1732,11 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
 
   char *out = cJSON_PrintUnformatted(arr);
   cJSON_Delete(arr);
-
+  
   if (out == NULL) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json fail");
     return ESP_FAIL;
   }
-
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
   free(out);

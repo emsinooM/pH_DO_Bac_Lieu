@@ -12,6 +12,7 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "user_system.h"
+#include "user_azure.h"
 #include "esp_mac.h"
 #include "esp_http_server.h"
 #include "mdns.h"
@@ -152,7 +153,7 @@ static void prv_slow_retry_task(void *pvParameters)
                     
                     wifi_config_manager_trigger_scan();
                     int wait_cnt = 0;
-                    while (wifi_config_manager_get_scan_state() == WIFI_SCAN_STATE_SCANNING && wait_cnt < 40)
+                    while (wifi_config_manager_get_scan_state() == WIFI_SCAN_STATE_SCANNING && wait_cnt < 80)
                     {
                         vTaskDelay(pdMS_TO_TICKS(100));
                         wait_cnt++;
@@ -172,7 +173,7 @@ static void prv_slow_retry_task(void *pvParameters)
                                 for (uint16_t i = 0; i < num_ap; i++) {
                                     for (uint8_t j = 0; j < saved_list->count; j++) {
                                         if (strcmp((char *)ap_records[i].ssid, saved_list->items[j].ssid) == 0) {
-                                            if (ap_records[i].rssi >= -85 && ap_records[i].rssi > best_rssi) {
+                                            if (ap_records[i].rssi >= -92 && ap_records[i].rssi > best_rssi) {
                                                 best_rssi = ap_records[i].rssi;
                                                 best_match_idx = j;
                                             }
@@ -196,7 +197,7 @@ static void prv_slow_retry_task(void *pvParameters)
                                         ESP_LOGI(WIFI_CFG_TAG, "Promoted fallback SSID '%s' to primary saved Wi-Fi in NVS", s_pending_ssid);
                                     }
                                 } else {
-                                    ESP_LOGW(WIFI_CFG_TAG, "Fallback scan found no known AP with RSSI >= -85dBm");
+                                    ESP_LOGW(WIFI_CFG_TAG, "Fallback scan found no known AP with RSSI >= -92dBm");
                                 }
                             }
                             free(ap_records);
@@ -441,16 +442,21 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
     else if(event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
         Sys_Info.isWifiConnected = false;
+        IoTHubHandle.isAzureInitialized = false;
+        IoTHubHandle.isNeedReinit = true;
         wifi_event_sta_disconnected_t *dis_evt = (wifi_event_sta_disconnected_t *)event_data;
         uint8_t reason = dis_evt ? dis_evt->reason : 0;
         ESP_LOGW(WIFI_CFG_TAG, "WiFi STA Disconnected! Reason code: %d", reason);
 
         if(s_allow_sta_connect)
         {
-            // Nếu phát hiện sai/đổi mật khẩu (WIFI_REASON_AUTH_FAIL = 4 hoặc WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT = 15)
-            // thì lập tức kích hoạt fallback scan chứ không cố kết nối lại mật khẩu bị lỗi nữa!
-            if (reason == WIFI_REASON_AUTH_FAIL || reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT) {
-                ESP_LOGW(WIFI_CFG_TAG, "Auth failure/Timeout detected for SSID: %s. Forcing fallback scan...", s_pending_ssid);
+            // Nếu phát hiện sai/đổi mật khẩu hoặc không tìm thấy AP trong vùng phủ sóng (Reason 201)
+            // thì lập tức kích hoạt fallback scan chứ không cố kết nối lại mạng bị lỗi nữa!
+            if (reason == WIFI_REASON_AUTH_FAIL || 
+                reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+                reason == WIFI_REASON_NO_AP_FOUND ||
+                reason == WIFI_REASON_BEACON_TIMEOUT) {
+                ESP_LOGW(WIFI_CFG_TAG, "Auth failure/AP not found (Reason: %d) for SSID: %s. Forcing fallback scan...", reason, s_pending_ssid);
                 s_retry_num = EXAMPLE_ESP_MAXIMUM_RETRY;
             }
 
@@ -512,7 +518,7 @@ static void prv_scan_task(void *pvParameters)
         .show_hidden = false,
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
         .scan_time.active.min = 100,
-        .scan_time.active.max = 300,
+        .scan_time.active.max = 200,
     };
 
     esp_err_t err = esp_wifi_scan_start(&scan_config, false); // non-blocking
@@ -746,8 +752,8 @@ void wifi_config_manager_prepare_scan(void)
         s_was_allow_sta_connect = s_allow_sta_connect;
         s_allow_sta_connect = false;
         esp_wifi_disconnect();
-        // Wait a short moment (500ms) for the Wi-Fi driver to fully stop connection attempts
-        vTaskDelay(pdMS_TO_TICKS(500));
+        // Wait a short moment (150ms) for the Wi-Fi driver to fully stop connection attempts
+        vTaskDelay(pdMS_TO_TICKS(150));
     }
 }
 

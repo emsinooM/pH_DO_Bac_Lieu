@@ -1234,8 +1234,8 @@ static void lcd_demo_task(void *arg) {
       }
 
       bool is_f = (g_temp_mode == TEMP_MODE_ATC_F || g_temp_mode == TEMP_MODE_MTC_F);
-      if (temp_val < -20.0f || temp_val > 150.0f) {
-        snprintf(temp_val_num_str, sizeof(temp_val_num_str), "25.0");
+      if (!temp_valid) {
+        snprintf(temp_val_num_str, sizeof(temp_val_num_str), "N/A");
       } else if (is_f) {
         float temp_val_f = temp_val * 1.8f + 32.0f;
         snprintf(temp_val_num_str, sizeof(temp_val_num_str), "%.1f", temp_val_f);

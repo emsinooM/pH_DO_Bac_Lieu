@@ -23,8 +23,8 @@
 #include "esp_wifi.h"
 
 #ifndef azureiothubDEFAULT_TOKEN_TIMEOUT_IN_SEC
-    // #define azureiothubDEFAULT_TOKEN_TIMEOUT_IN_SEC    azureiotconfigDEFAULT_TOKEN_TIMEOUT_IN_SEC
-    #define azureiothubDEFAULT_TOKEN_TIMEOUT_IN_SEC    60U
+    #define azureiothubDEFAULT_TOKEN_TIMEOUT_IN_SEC    azureiotconfigDEFAULT_TOKEN_TIMEOUT_IN_SEC
+    // #define azureiothubDEFAULT_TOKEN_TIMEOUT_IN_SEC    60U
 #endif /* azureiothubDEFAULT_TOKEN_TIMEOUT_IN_SEC */
 
 #ifndef azureiothubKEEP_ALIVE_TIMEOUT_SECONDS
