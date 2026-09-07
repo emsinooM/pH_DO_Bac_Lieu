@@ -569,7 +569,7 @@ static void do_sensor_task(void *arg) {
     // =========================================================================
 #if 1
   ESP_LOGI(TAG, "DO Sensor Dang chay o che do MO PHONG (Modbus Status = TRUE)");
-  static const float s_sim_do_values[6] = {7.89f, 7.89f, 7.89f, 7.89f, 7.89f, 7.89f};
+  static const float s_sim_do_values[6] = {9.86f, 9.86f, 9.86f, 9.86f, 9.86f, 9.86f};
   static const float s_sim_do_temp_values[6] = {30.30f, 30.10f, 30.20f, 30.40f, 30.20f, 30.10f};
 
   while (true) {

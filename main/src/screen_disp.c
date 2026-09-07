@@ -12,6 +12,9 @@
 #include "ph_temp.h"
 #include "screen_menu.h"
 #include "large_font.h"
+#include "esp_wifi.h"
+#include "user_system.h"
+#include "user_azure.h"
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -575,6 +578,82 @@ uint8_t LCD_GetMediumStringWidth(const char *str) {
   return total;
 }
 
+/* =====================================================================
+ * Icon trạng thái (Wi-Fi & Cloud)
+ * ===================================================================== */
+void LCD_DrawWifiIcon(uint8_t x, uint8_t y, int8_t rssi, bool is_connected, uint8_t color) {
+  uint8_t bars = 0;
+  if (is_connected) {
+    if (rssi >= -55) bars = 4;
+    else if (rssi >= -65) bars = 3;
+    else if (rssi >= -75) bars = 2;
+    else bars = 1;
+  }
+
+  if (bars == 0) {
+    /* Chấm ở đáy + Dấu gạch chéo 'X' thể hiện không có Wi-Fi */
+    LCD_DrawPixel(x + 4, y + 7, color);
+    LCD_DrawLine(x + 1, y + 1, x + 7, y + 7, color);
+    LCD_DrawLine(x + 1, y + 7, x + 7, y + 1, color);
+    return;
+  }
+
+  /* Vạch 1: Chấm ở tâm đáy (y=7) */
+  if (bars >= 1) {
+    LCD_DrawPixel(x + 4, y + 7, color);
+  }
+
+  /* Vạch 2: Vòng cung nhỏ (y=4..5) */
+  if (bars >= 2) {
+    LCD_DrawPixel(x + 3, y + 5, color);
+    LCD_DrawPixel(x + 4, y + 4, color);
+    LCD_DrawPixel(x + 5, y + 5, color);
+  }
+
+  /* Vạch 3: Vòng cung vừa (y=2..3) */
+  if (bars >= 3) {
+    LCD_DrawPixel(x + 2, y + 3, color);
+    LCD_DrawHLine(x + 3, y + 2, 3, color);
+    LCD_DrawPixel(x + 6, y + 3, color);
+  }
+
+  /* Vạch 4: Vòng cung lớn (y=0..1) */
+  if (bars >= 4) {
+    LCD_DrawPixel(x + 1, y + 1, color);
+    LCD_DrawHLine(x + 2, y + 0, 5, color);
+    LCD_DrawPixel(x + 7, y + 1, color);
+  }
+}
+
+void LCD_DrawCloudIcon(uint8_t x, uint8_t y, bool is_azure_connected, uint8_t color) {
+  LCD_DrawHLine(x + 1, y + 6, 8, color);
+  LCD_DrawVLine(x, y + 4, 2, color);
+  LCD_DrawPixel(x + 1, y + 3, color);
+  LCD_DrawHLine(x + 2, y + 2, 2, color);
+  LCD_DrawPixel(x + 4, y + 1, color);
+  LCD_DrawHLine(x + 5, y + 0, 2, color);
+  LCD_DrawPixel(x + 7, y + 1, color);
+  LCD_DrawPixel(x + 8, y + 2, color);
+  LCD_DrawVLine(x + 9, y + 3, 3, color);
+
+  if (!is_azure_connected) {
+    LCD_DrawLine(x, y, x + 9, y + 6, color);
+  }
+}
+
+void LCD_DrawTopStatusIcons(uint8_t wifi_x, uint8_t cloud_x, uint8_t y, uint8_t color) {
+  bool wifi_conn = Is_System_Internet_Connected();
+  int8_t rssi = -100;
+  if (wifi_conn) {
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+      rssi = ap_info.rssi;
+    }
+  }
+  LCD_DrawWifiIcon(wifi_x, y, rssi, wifi_conn, color);
+  LCD_DrawCloudIcon(cloud_x, y, IoTHubHandle.isAzureInitialized, color);
+}
+
 static uint8_t lcd_text_width(const char *str) {
   return (uint8_t)(strlen(str) * 6);
 }
@@ -995,13 +1074,14 @@ static void lcd_draw_measurement_numbers(const char *ph_str, const char *do_str)
     uint8_t block_w = do_w + 5 + unit_w;
     uint8_t do_x = (LCD_WIDTH - block_w) / 2;
     LCD_DrawString3x(do_x, 17, do_str, LCD_COLOR_ON);
+    LCD_DrawString(do_x + do_w + 5, 19, "DO", LCD_COLOR_ON);
     LCD_DrawString(do_x + do_w + 5, 30, "mg/L", LCD_COLOR_ON);
   } else {
     const uint8_t split_x = 64;
     const uint8_t left_x = 2;
     const uint8_t right_x = 65;
     const uint8_t panel_w = 61;
-    const uint8_t area_y = 11;
+    const uint8_t area_y = 10;
     const uint8_t area_bottom = 45;
     const uint8_t val_y = 14;
     const uint8_t unit_y = 34;
@@ -1016,7 +1096,7 @@ static void lcd_draw_measurement_numbers(const char *ph_str, const char *do_str)
     LCD_DrawHLine(right_x, area_bottom, panel_w, LCD_COLOR_ON);
 
     lcd_draw_dual_metric(left_x, panel_w, val_y, unit_y, ph_str, "pH", false);
-    lcd_draw_dual_metric(right_x, panel_w, val_y, unit_y, do_str, "mg/L", false);
+    lcd_draw_dual_metric(right_x, panel_w, val_y, unit_y, do_str, "DO mg/L", false);
   }
 }
 
@@ -1111,24 +1191,34 @@ static void lcd_demo_task(void *arg) {
     if (tick == 0) {
       PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
       ph_val = status.ph;
+      bool ph_valid = status.ph_valid;
       do_val = status.do_mg_l;
       do_valid = status.do_valid;
 
+      bool temp_valid = false;
       // Chế độ pH dùng nhiệt độ pH. Chế độ DO và song song dùng nhiệt độ DO
       // (nếu lỗi dùng pH làm fallback).
       if (g_display_mode == DISP_MODE_PH) {
         temp_val = status.temperature;
+        temp_valid = status.temp_valid;
       } else {
         temp_val = status.do_valid ? status.do_temp_c : status.temperature;
+        temp_valid = status.do_valid ? (status.do_temp_c >= 0.0f && status.do_temp_c <= 60.0f) : status.temp_valid;
       }
 
       /* Format chuỗi */
-      snprintf(ph_str, sizeof(ph_str), "%.2f", ph_val);
+      if (ph_valid) {
+        snprintf(ph_str, sizeof(ph_str), "%.2f", ph_val);
+      } else {
+        snprintf(ph_str, sizeof(ph_str), "N/A");
+      }
+
       if (do_valid) {
         snprintf(do_str, sizeof(do_str), "%.2f", do_val);
       } else {
-        snprintf(do_str, sizeof(do_str), "---");
+        snprintf(do_str, sizeof(do_str), "N/A");
       }
+
       if (g_sys_lang == LANG_VI) {
         if (do_valid) {
           snprintf(do_sat_str, sizeof(do_sat_str), "Oxy: %.1f%%", status.do_saturation_pct);
@@ -1142,6 +1232,7 @@ static void lcd_demo_task(void *arg) {
           snprintf(do_sat_str, sizeof(do_sat_str), "Sat: N/A");
         }
       }
+
       bool is_f = (g_temp_mode == TEMP_MODE_ATC_F || g_temp_mode == TEMP_MODE_MTC_F);
       if (temp_val < -20.0f || temp_val > 150.0f) {
         snprintf(temp_val_num_str, sizeof(temp_val_num_str), "25.0");
@@ -1255,12 +1346,9 @@ static void lcd_demo_task(void *arg) {
         /* ── Che do so ── */
         /* Top bar */
         LCD_FillRect(0, 0, 128, 10, LCD_COLOR_ON);
-        if (g_sys_lang == LANG_VI) {
-          LCD_DrawString(4, 1, "MebiEco", LCD_COLOR_OFF);
-        } else {
-          LCD_DrawString(4, 1, "MebiEco", LCD_COLOR_OFF);
-        }
-        LCD_DrawString(80, 1, "RS485", LCD_COLOR_OFF);
+        LCD_DrawString(4, 1, "RS485", LCD_COLOR_OFF);
+        LCD_DrawTopStatusIcons(50, 63, 1, LCD_COLOR_OFF);
+        LCD_DrawString(84, 1, "MebiEco", LCD_COLOR_OFF);
 
         /* Đường viền dọc vùng giữa (2px mỗi bên) */
         LCD_DrawVLine(0, 10, 36, LCD_COLOR_ON);
@@ -1287,39 +1375,49 @@ static void lcd_demo_task(void *arg) {
         { // DISP_MODE_DO hoặc DISP_MODE_DUAL
           LCD_DrawString(4, 47, do_sat_str, LCD_COLOR_OFF);
         }
-        /* Hiển thị số nhiệt độ căn chuẩn khớp với chuỗi giờ bên dưới (chữ số lẻ sau . ở x = 100) */
-        char int_part[10] = {0};
-        char frac_char[2] = {0, 0};
-        char *dot_ptr = strchr(temp_val_num_str, '.');
-        if (dot_ptr) {
-          int len_int = dot_ptr - temp_val_num_str;
-          strncpy(int_part, temp_val_num_str, len_int);
-          int_part[len_int] = '\0';
-          frac_char[0] = dot_ptr[1];
+        /* Hiển thị số nhiệt độ căn chuẩn khớp với chuỗi giờ bên dưới */
+        if (strcmp(temp_val_num_str, "N/A") == 0) {
+          LCD_DrawString(86, 47, "N/A", LCD_COLOR_OFF);
+          LCD_DrawPixel(106, 47, LCD_COLOR_OFF);
+          LCD_DrawPixel(107, 47, LCD_COLOR_OFF);
+          LCD_DrawPixel(106, 48, LCD_COLOR_OFF);
+          LCD_DrawPixel(107, 48, LCD_COLOR_OFF);
+          char unit_str_buf[2] = { unit_char, '\0' };
+          LCD_DrawString(111, 47, unit_str_buf, LCD_COLOR_OFF);
         } else {
-          strcpy(int_part, temp_val_num_str);
-          frac_char[0] = '0';
+          char int_part[10] = {0};
+          char frac_char[2] = {0, 0};
+          char *dot_ptr = strchr(temp_val_num_str, '.');
+          if (dot_ptr) {
+            int len_int = dot_ptr - temp_val_num_str;
+            strncpy(int_part, temp_val_num_str, len_int);
+            int_part[len_int] = '\0';
+            frac_char[0] = dot_ptr[1];
+          } else {
+            strcpy(int_part, temp_val_num_str);
+            frac_char[0] = '0';
+          }
+
+          uint8_t int_w = (uint8_t)(strlen(int_part) * 6);
+          uint8_t int_x = 94 - int_w;
+
+          /* Phần nguyên (giãn về bên trái) */
+          LCD_DrawString(int_x, 47, int_part, LCD_COLOR_OFF);
+          /* Dấu chấm (.) */
+          LCD_DrawString(94, 47, ".", LCD_COLOR_OFF);
+          /* Số thập phân sau dấu chấm (khớp thẳng đứng với số phút thứ 2 tại x = 100) */
+          LCD_DrawString(100, 47, frac_char, LCD_COLOR_OFF);
+
+          /* Ký hiệu độ (2x2 px) tại x = 106 */
+          LCD_DrawPixel(106, 47, LCD_COLOR_OFF);
+          LCD_DrawPixel(107, 47, LCD_COLOR_OFF);
+          LCD_DrawPixel(106, 48, LCD_COLOR_OFF);
+          LCD_DrawPixel(107, 48, LCD_COLOR_OFF);
+
+          /* Chữ đơn vị C/F tại x = 111 */
+          char unit_str_buf[2] = { unit_char, '\0' };
+          LCD_DrawString(111, 47, unit_str_buf, LCD_COLOR_OFF);
         }
-
-        uint8_t int_w = (uint8_t)(strlen(int_part) * 6);
-        uint8_t int_x = 94 - int_w;
-
-        /* Phần nguyên (giãn về bên trái) */
-        LCD_DrawString(int_x, 47, int_part, LCD_COLOR_OFF);
-        /* Dấu chấm (.) */
-        LCD_DrawString(94, 47, ".", LCD_COLOR_OFF);
-        /* Số thập phân sau dấu chấm (khớp thẳng đứng với số phút thứ 2 tại x = 100) */
-        LCD_DrawString(100, 47, frac_char, LCD_COLOR_OFF);
-
-        /* Ký hiệu độ (2x2 px) tại x = 106 */
-        LCD_DrawPixel(106, 47, LCD_COLOR_OFF);
-        LCD_DrawPixel(107, 47, LCD_COLOR_OFF);
-        LCD_DrawPixel(106, 48, LCD_COLOR_OFF);
-        LCD_DrawPixel(107, 48, LCD_COLOR_OFF);
-
-        /* Chữ đơn vị C/F tại x = 111 */
-        char unit_str_buf[2] = { unit_char, '\0' };
-        LCD_DrawString(111, 47, unit_str_buf, LCD_COLOR_OFF);
         LCD_DrawString(4, 56, date_str, LCD_COLOR_OFF);
         LCD_DrawString(76, 56, time_str, LCD_COLOR_OFF);
       }

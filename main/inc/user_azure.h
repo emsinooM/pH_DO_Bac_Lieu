@@ -23,8 +23,10 @@ typedef struct{
     bool isProcessLoopInitialized;
     bool isTransmitInitialized;
     bool isTelemetryInitialized;
+    bool isOfflineSyncInitialized;
 
 }IoTHubHandle_t;
+
 
 extern IoTHubHandle_t IoTHubHandle;
 extern bool bIsOtaActivated;
@@ -32,8 +34,9 @@ extern bool bIsOtaActivated;
 
 
 typedef struct{
-    char payload[1024];
+    char payload[2048];
 }TelemetryEvent_t;
+
 
 // typedef struct
 // {

@@ -171,14 +171,11 @@ static void ph_temp_sensor_task(void *pvParameters) {
     // Để chuyển sang chạy thực tế: Đổi '#if 1' bên dưới thành '#if 0' hoặc comment lại toàn bộ khối này
     // =========================================================================
 #if 1
-    /* Chuỗi mô phỏng 5 bước: 
-     * Bước 0: pH=7.00 (OK), Temp=28.5C (OK)
-     * Bước 1: pH=-1.50 (LỖI -> N/A), Temp=-15.0C (LỖI -> N/A)
-     * Bước 2: pH=6.86 (OK), Temp=32.0C (OK)
-     * Bước 3: pH=15.20 (LỖI -> N/A), Temp=85.0C (LỖI -> N/A)
-     * Bước 4: pH=3.45 (OK), Temp=25.3C (OK)
+    /* Chuỗi mô phỏng 5 bước (pH ~ 7.50, Temp ~ 30.2°C):
+     * Tự động tính toán v_probe_mv hợp lý theo phương trình Nernst ở nhiệt độ mô phỏng
+     * Với pH 7.50 & 30°C: Nernst Slope ≈ -60.18 mV/pH -> v_probe_mv ≈ -30.09 mV
      */
-    static const float s_sim_ph[5]   = { 7.50f,  7.51f,  7.52f,  7.53f,  7.54f };
+    static const float s_sim_ph[5]   = { 8.01f,  8.02f,  8.32f,  8.53f,  8.54f };
     static const float s_sim_temp[5] = {30.30f, 30.10f, 30.20f, 30.40f, 30.20f };
 
     static size_t s_sim_idx = 0;
@@ -188,6 +185,10 @@ static void ph_temp_sensor_task(void *pvParameters) {
 
     current_temp = s_sim_temp[s_sim_idx];
     temp_valid = (current_temp >= 0.0f && current_temp <= 60.0f);
+
+    // Tính toán v_probe_mv hợp lý theo phương trình Nernst phụ thuộc pH và Nhiệt độ mô phỏng
+    float nernst_slope = -59.16f * ((current_temp + 273.15f) / 298.15f);
+    v_probe_mv = (current_ph - 7.00f) * nernst_slope + ph_cal.ph7_voltage_mv;
 
     s_sim_idx = (s_sim_idx + 1) % 5;
 #endif

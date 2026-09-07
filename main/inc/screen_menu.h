@@ -94,6 +94,7 @@ typedef enum {
     PAGE_SYSTEM_SETTINGS,
     PAGE_SENSOR_SETTINGS,
     PAGE_MODBUS_SETTINGS,
+    PAGE_HISTORY_LOG,       /**< Trang xem lịch sử dữ liệu FRAM */
 
     /* Level 3 – System Settings */
     PAGE_LANGUAGE,

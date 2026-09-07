@@ -41,10 +41,13 @@ Sản phẩm ứng dụng vi xử lý **ESP32-S3 (Dual-Core 240MHz)** tích hợ
 - **Biểu đồ thời gian thực (Real-time Trend Chart)**: Vẽ đồ thị diễn biến pH/DO 24 điểm liên tục ($\sim 48$ giây) trực tiếp trên LCD.
 - **Bàn phím vật lý 5 nút**: Hỗ trợ phím tắt khởi động lại nhanh (nhấn giữ ENTER 7 giây).
 
-### 2.5. Kết nối kép RS485 Modbus RTU & Đám mây Azure IoT Hub
-- **Cổng Modbus RS485 Cặp (Dual Port)**:
-  - **Cổng 1 (MR/Auxiliary)**: Kết nối PLC, hệ thống SCADA, màn hình HMI công nghiệp (Baudrate 2400 – 115200 bps, Slave ID 1–247).
-  - **Cổng 2 (DO Sensor)**: Kết nối trực tiếp với đầu dò DO quang học.
+### 2.5. Kết nối kép RS485 Modbus RTU linh hoạt & Đám mây Azure IoT Hub
+- **Cổng Modbus RS485 kép (Dual Hardware RS485 Ports)**: Trang bị 2 cổng phần cứng RS485 độc lập hỗ trợ giao thức Modbus RTU tiêu chuẩn công nghiệp (Baudrate 2400 – 115200 bps, ID 1–247):
+  - **Cổng 1 (Port 1 / External)**: Hiện tại được để trống (Standby), sẵn sàng cho việc kết nối mở rộng trong tương lai với hệ thống giám sát / điều khiển trung tâm (PLC, SCADA, màn hình HMI, Datalogger) hoặc kết nối bổ sung các cảm biến Modbus RTU khác (khi có nhu cầu tích hợp thêm).
+  - **Cổng 2 (Port 2 / Sensor Port)**: Được phần mềm tích hợp mặc định cho việc đọc dữ liệu từ đầu dò DO quang học (KOG206). Cảm biến DO cần được đấu nối trực tiếp vào Cổng 2 để hệ thống nhận diện và cập nhật nồng độ DO chính xác.
+  - **Khả năng kết nối nhiều thiết bị trên 1 cổng RS485 (Multi-drop Bus)**: Theo đặc tính kỹ thuật của chuẩn truyền thông RS485, **mỗi cổng RS485 hoàn toàn có thể kết nối song song nhiều thiết bị / cảm biến trên cùng một đường dây truyền thông** (lên tới 32 thiết bị tải tiêu chuẩn hoặc 247 địa chỉ Slave), miễn là thỏa mãn 2 điều kiện:
+    1. Mỗi thiết bị / cảm biến trên cùng đường bus có một **Địa chỉ Modbus (Slave ID) duy nhất, không trùng lặp** (từ 1 đến 247).
+    2. Tất cả các thiết bị kết nối chung trên đường bus đó phải được cài đặt **cùng Tốc độ Baud (Baudrate), Parity và Stop Bit**.
 - **Web Config Portal không dây**: Thiết bị phát Wi-Fi AP (`MEBICO_ESP32_PH_xxxx`). Cho phép kỹ thuật viên cấu hình Wi-Fi, xem telemetry thời gian thực, và đặc biệt là **giả lập giao diện màn hình LCD & bàn phím điều khiển từ xa** trên trình duyệt điện thoại/laptop.
 - **Azure IoT Hub Cloud Service**:
   - Gửi dữ liệu Telemetry chuẩn định dạng JSON về Cloud theo chu kỳ cài đặt (mặc định 1 giây - 10 giây).

@@ -33,10 +33,12 @@
 #define CMD_CODE_DO_CALIBRATE               506
 #define CMD_CODE_REBOOT                     507
 #define CMD_CODE_GET_FULL_TELEMETRY         508
+#define CMD_CODE_OFFLINE_TELEMETRY_SYNC     510
 
 
 
-#define VERSION "2.0.1"
+
+#define VERSION "2.0.2"
 
 
 /* Define Telemetry queue length */

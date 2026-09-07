@@ -47,9 +47,10 @@ typedef struct __attribute__((packed)) {
     uint16_t head_index;    // Write index (0 to 2045)
     uint16_t tail_index;    // Read index (0 to 2045)
     uint16_t record_count;  // Current number of valid records (0 to 2046)
+    uint16_t synced_index;  // Next sync index for Azure (0 to 2045)
     uint16_t max_records;   // Maximum records (2046)
     uint16_t record_size;   // Kích thước 1 bản ghi (12 Bytes)
-    uint8_t  reserved[10];  // Đệm cho đủ 24 Bytes header (0x2000 to 0x2017)
+    uint8_t  reserved[8];   // Đệm cho đủ 24 Bytes header (0x2000 to 0x2017)
 } Fram_Log_Header_t;
 
 
@@ -72,3 +73,9 @@ bool Fram_Log_Read_Record(uint16_t relative_index, EnvLogRecord_t *record_out);
 bool Fram_Log_Read_Latest(EnvLogRecord_t *record_out);
 uint16_t Fram_Log_Get_Count(void);
 void Fram_Log_Clear_All(void);
+
+// === Offline Telemetry Sync APIs ===
+uint16_t Fram_Log_Get_Unsynced_Count(void);
+bool Fram_Log_Get_Unsynced_Batch(EnvLogRecord_t *records_out, uint16_t max_records, uint16_t *count_out);
+bool Fram_Log_Commit_Synced_Count(uint16_t count);
+

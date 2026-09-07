@@ -17,18 +17,29 @@ float g_temp_offset = 0.0f;
 
 // Đối tượng hiệu chuẩn toàn cục dùng chung cho hệ thống
 PhCalibration_t ph_cal = {
-    .ph7_voltage_mv = 4.77f,
-    .ph7_temp_c = 25.0f,
-    .ph4_voltage_mv = 175.53f,
-    .ph4_temp_c = 25.0f,
+    // --- GIÁ TRỊ GỐC MẶC ĐỊNH (Bảng hiệu chuẩn ban đầu) ---
+    // .ph7_voltage_mv = 4.77f,
+    // .ph7_temp_c = 25.0f,
+    // .ph4_voltage_mv = 175.53f,
+    // .ph4_temp_c = 25.0f,
+    // .slope_norm = -5.238f,
+    // .slope_high = -5.238f,
+    // .u7 = 0.016f,
+    // .is_calibrated = false,
+
+    // --- BỘ THÔNG SỐ FAKE THỬ NGHIỆM GIẢ LẬP ---
+    .ph7_voltage_mv = 1.63f,
+    .ph7_temp_c = 30.97f,
+    .ph4_voltage_mv = 176.80f,
+    .ph4_temp_c = 30.89f,
     .ph10_voltage_mv = -177.0f,
     .ph10_temp_c = 25.0f,
     .ph10_target = 10.00f,
-    .slope_norm = -5.238f,
-    .slope_high = -5.238f,
-    .u7 = 0.016f,
+    .slope_norm = -5.207f,
+    .slope_high = -5.207f,
+    .u7 = 0.00536f,
     .cal_type = 2,
-    .is_calibrated = false
+    .is_calibrated = true
 };
 
 // Cấu trúc trạng thái cảm biến toàn cục
@@ -333,17 +344,17 @@ bool Load_Calibration_From_Storage(void) {
     nvs_handle_t handle;
     esp_err_t err = nvs_open("sys_cfg", NVS_READONLY, &handle);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Không mở được NVS (Lần đầu boot?): %s. Khởi tạo giá trị mặc định.", esp_err_to_name(err));
-        ph_cal.ph7_voltage_mv = 24.2f;
-        ph_cal.ph7_temp_c = 25.0f;
-        ph_cal.ph4_voltage_mv = 195.6f;
-        ph_cal.ph4_temp_c = 25.0f;
+        ESP_LOGW(TAG, "Không mở được NVS (Lần đầu boot?): %s. Khởi tạo giá trị giả lập thử nghiệm.", esp_err_to_name(err));
+        // --- Giá trị cũ gốc: ph7_mV=24.2f, ph7_temp=25.0f, ph4_mV=195.6f, ph4_temp=25.0f, is_calibrated=false ---
+        ph_cal.ph7_voltage_mv = 1.63f;  // Gốc: 24.2f
+        ph_cal.ph7_temp_c = 30.97f;    // Gốc: 25.0f
+        ph_cal.ph4_voltage_mv = 176.80f; // Gốc: 195.6f
+        ph_cal.ph4_temp_c = 30.89f;    // Gốc: 25.0f
         ph_cal.ph10_voltage_mv = -177.0f;
         ph_cal.ph10_temp_c = 25.0f;
         ph_cal.ph10_target = 10.00f;
         ph_cal.cal_type = 2;
         update_ph_calibration(&ph_cal);
-        ph_cal.is_calibrated = false;
         Update_Sensor_Measurements(7.0f, true, 25.0f, true, 0.0f);
         return false;
     }
@@ -353,23 +364,31 @@ bool Load_Calibration_From_Storage(void) {
     nvs_close(handle);
 
     if (err != ESP_OK || size != sizeof(PhCalibration_t)) {
-        ESP_LOGW(TAG, "Không tìm thấy dữ liệu hiệu chuẩn trong NVS, sử dụng giá trị fallback mặc định.");
-        ph_cal.ph7_voltage_mv = 24.2f;
-        ph_cal.ph7_temp_c = 25.0f;
-        ph_cal.ph4_voltage_mv = 195.6f;
-        ph_cal.ph4_temp_c = 25.0f;
+        ESP_LOGW(TAG, "Không tìm thấy dữ liệu hiệu chuẩn trong NVS, sử dụng giá trị fake thử nghiệm.");
+        // --- Giá trị cũ gốc: ph7_mV=24.2f, ph7_temp=25.0f, ph4_mV=195.6f, ph4_temp=25.0f, is_calibrated=false ---
+        ph_cal.ph7_voltage_mv = 1.63f;  // Gốc: 24.2f
+        ph_cal.ph7_temp_c = 30.97f;    // Gốc: 25.0f
+        ph_cal.ph4_voltage_mv = 176.80f; // Gốc: 195.6f
+        ph_cal.ph4_temp_c = 30.89f;    // Gốc: 25.0f
         ph_cal.ph10_voltage_mv = -177.0f;
         ph_cal.ph10_temp_c = 25.0f;
         ph_cal.ph10_target = 10.00f;
         ph_cal.cal_type = 2;
         update_ph_calibration(&ph_cal);
-        ph_cal.is_calibrated = false;
         Update_Sensor_Measurements(7.0f, true, 25.0f, true, 0.0f);
         return false;
     }
 
-    ESP_LOGI(TAG, "Đã tải cấu hình hiệu chuẩn thành công từ NVS: is_calibrated=%d, pH7_mV=%.2f, pH4_mV=%.2f",
-             ph_cal.is_calibrated, ph_cal.ph7_voltage_mv, ph_cal.ph4_voltage_mv);
+    // Ghi đè bộ thông số fake thử nghiệm để đảm bảo luôn dùng thông số này khi giả lập
+    ph_cal.ph7_voltage_mv = 1.63f;
+    ph_cal.ph7_temp_c = 30.97f;
+    ph_cal.ph4_voltage_mv = 176.80f;
+    ph_cal.ph4_temp_c = 30.89f;
+    ph_cal.cal_type = 2;
+    update_ph_calibration(&ph_cal);
+
+    ESP_LOGI(TAG, "Đã nạp cấu hình hiệu chuẩn thử nghiệm (fake): is_calibrated=%d, pH7_mV=%.2f (%.2fC), pH4_mV=%.2f (%.2fC)",
+             ph_cal.is_calibrated, ph_cal.ph7_voltage_mv, ph_cal.ph7_temp_c, ph_cal.ph4_voltage_mv, ph_cal.ph4_temp_c);
     Update_Sensor_Measurements(7.0f, true, 25.0f, true, 0.0f);
     return true;
 }
@@ -424,18 +443,18 @@ bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_
 bool Reset_PH_Calibration(void) {
     ESP_LOGI(TAG, "Yêu cầu khôi phục cài đặt gốc hiệu chuẩn pH...");
     
-    ph_cal.ph7_voltage_mv = 4.77f;
-    ph_cal.ph7_temp_c = 25.0f;
-    ph_cal.ph4_voltage_mv = 175.53f;
-    ph_cal.ph4_temp_c = 25.0f;
+    // --- Giá trị cũ gốc: ph7_mV=4.77f, ph7_temp=25.0f, ph4_mV=175.53f, ph4_temp=25.0f, is_calibrated=false ---
+    ph_cal.ph7_voltage_mv = 1.63f;  // Gốc: 4.77f
+    ph_cal.ph7_temp_c = 30.97f;    // Gốc: 25.0f
+    ph_cal.ph4_voltage_mv = 176.80f; // Gốc: 175.53f
+    ph_cal.ph4_temp_c = 30.89f;    // Gốc: 25.0f
     ph_cal.ph10_voltage_mv = -177.0f;
     ph_cal.ph10_temp_c = 25.0f;
     ph_cal.ph10_target = 10.00f;
     ph_cal.cal_type = 2;
-    ph_cal.is_calibrated = false;
     
     update_ph_calibration(&ph_cal);
-    ph_cal.is_calibrated = false; // Buộc trạng thái về chưa hiệu chuẩn thực tế
+    // ph_cal.is_calibrated = false; // Gốc: Buộc về false khi chưa hiệu chuẩn
     
     bool ok = Save_Calibration_To_Storage(&ph_cal);
     Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.ph_valid, s_sensor_status.temperature, s_sensor_status.temp_valid, s_sensor_status.v_probe_mv);
@@ -470,4 +489,3 @@ PhSensorHealth_t Get_PH_Sensor_Health(void) {
 
     return health;
 }
-

@@ -53,8 +53,8 @@
 \author{}
 \date{
     \textbf{Mã sản phẩm:} ESP32-S3 pH/DO/Temperature Monitoring System\\
-    \textbf{Phiên bản tài liệu:} 1.0\\
-    \textbf{Ngày cập nhật:} 15/07/2026
+    \textbf{Phiên bản tài liệu:} 1.2\\
+    \textbf{Ngày cập nhật:} 06/08/2026
 }
 \maketitle
 \thispagestyle{empty} % Không đánh số trang ở trang bìa
@@ -257,7 +257,7 @@ Khi bấm nút \textbf{RIGHT ►} ở màn hình đo lường, thiết bị chuy
 
 \begin{itemize}[label={-}]
     \item Mỗi điểm dữ liệu cách nhau \textbf{2 giây}.
-    \item Cửa sổ hiển thị \textbf{24 điểm} $\approx$ \textbf{48 giây} dữ liệu liên tục.
+ ===    \item Cửa sổ hiển thị \textbf{24 điểm} $\approx$ \textbf{48 giây} dữ liệu liên tục.
     \item Biểu đồ cuộn tự động từ trái sang phải.
     \item Bấm \textbf{RIGHT ►} lần nữa để quay lại kiểu Số.
 \end{itemize}
@@ -289,9 +289,9 @@ Mỗi trang menu có bố cục cố định:
 % ┌──────────────────────────────┐
 % │▌ Menu Chinh                 ▐│  ← Thanh tiêu đề (y=0-11, nền đen chữ trắng)
 % │                              │
-% │  1 Cai Dat He Thong          │  ← Danh sách mục (4 mục hiển thị cùng lúc)
+% │  1 Cai Dat He Thong          │  ← Danh sách mục (4 mục hiển thị cùng lúc, 6 mục tất cả)
 % │ ▶2 Cai Dat Hien Thi    ▶     │  ← Mục đang chọn (nền đen chữ trắng, có ►)
-% │  3 Cai Dat Modbus            │
+% │  3 Cai Dat Modbus            │  ← (Dùng nút UP/DOWN để cuộn xem 5 Xem Lai Lich Su & 6 Cai Dat WiFi)
 % │  4 Cai Dat Cam Bien          │
 % │                              │
 % │▌ESC  ▼  ▲  ►  ENT           ▐│  ← Thanh trạng thái (nền đen, hiện nút bấm)
@@ -482,7 +482,7 @@ Chức năng này cho phép người dùng thay đổi mật khẩu bảo vệ 4
 % \end{verbatim}
     \begin{figure}[H]
         \centering
-        % \includegraphics[width=0.5\textwidth]{thay_doi_mat_khau.png}
+        \includegraphics[width=0.5\textwidth]{change_password.png}
         \caption{Giao diện màn hình thay đổi mật khẩu}
         \label{fig:change_password_screen}
     \end{figure}
@@ -545,13 +545,24 @@ Chọn chế độ hiển thị chính trên màn hình đo lường:
 \textbf{Yêu cầu nhập mật khẩu} trước khi truy cập mục này. Mật khẩu mặc định là \textbf{\texttt{1234}}. Xem \hyperref[sec:password]{cách nhập mật khẩu (Mục \ref*{sec:password})}.
 \end{importantbox}
 
-\subsection{Cổng Modbus 1 (MR / External)}
-Cổng giao tiếp RS485 thứ nhất, kết nối với thiết bị bên ngoài (PLC, SCADA...).
+Hệ thống được trang bị \textbf{2 cổng giao tiếp phần cứng RS485 độc lập} hỗ trợ giao thức truyền thông chuẩn \textbf{Modbus RTU} công nghiệp. Kiến trúc giao tiếp kép này mang lại khả năng \textbf{mở rộng linh hoạt và kết nối đa thiết bị}:
+\begin{itemize}[label={-}]
+    \item \textbf{Khả năng kết nối đa dạng:} Tương thích với nhiều dòng thiết bị sử dụng chuẩn Modbus RTU trên thị trường --- từ hệ thống giám sát / điều khiển trung tâm (\textbf{PLC, SCADA, màn hình HMI, hệ thống DCS, Datalogger}) đến các loại \textbf{cảm biến môi trường số} (DO quang học, EC/Độ mặn, ORP, Độ đục, Mực nước siêu âm...).
+    \item \textbf{Đặc tính kết nối nhiều thiết bị trên 1 cổng RS485 (Multi-drop Bus):} Theo đặc tính kỹ thuật chuẩn RS485, \textbf{mỗi cổng RS485 hoàn toàn có thể kết nối song song nhiều thiết bị / cảm biến trên cùng một đường dây truyền thông} (tối đa 32 thiết bị tải chuẩn hoặc tới 247 địa chỉ Slave), miễn là thỏa mãn 2 điều kiện:
+    \begin{enumerate}
+        \item Mỗi thiết bị / cảm biến trên cùng đường bus phải cài đặt \textbf{Địa chỉ Modbus (Slave ID) duy nhất, không trùng lặp} (từ 1 đến 247).
+        \item Tất cả các thiết bị kết nối chung trên tuyến bus đó phải cài đặt \textbf{cùng Tốc độ Baud (Baudrate), Parity và Stop Bit}.
+    \end{enumerate}
+    \item \textbf{Cấu hình tùy biến độc lập:} Cho phép người dùng chủ động cài đặt địa chỉ (Address: 1 -- 247), tốc độ truyền (Baudrate: 2400 -- 115200 bps), Parity và Stop Bit riêng biệt cho từng cổng.
+\end{itemize}
 
-\subsection{Cổng Modbus 2 (DO Sensor)}
-Cổng RS485 thứ hai, dùng để kết nối \textbf{cảm biến DO} (KOG206).
+\subsection{Cổng Modbus 1 (Port 1 / External)}
+Cổng giao tiếp RS485 thứ nhất. Hiện tại cổng này được \textbf{để trống (Standby)}, sẵn sàng cho việc kết nối mở rộng trong tương lai với các hệ thống giám sát / điều khiển bên ngoài (\textbf{PLC, SCADA, HMI, Datalogger}) hoặc kết nối bổ sung các cảm biến Modbus RTU khác khi có nhu cầu tích hợp thêm.
 
-\subsection{Các thông số cấu hình (giống nhau cho cả 2 cổng)}
+\subsection{Cổng Modbus 2 (Port 2 / Sensor Port)}
+Cổng giao tiếp RS485 thứ hai. Trong cấu hình hệ thống tiêu chuẩn, Cổng 2 được phần mềm cài đặt mặc định cho việc đọc dữ liệu từ \textbf{cảm biến DO quang học} (ví dụ: KOG206). Cảm biến DO cần được đấu nối trực tiếp vào Cổng 2 để hệ thống tự động nhận diện và cập nhật nồng độ DO chính xác.
+
+\subsection{Các thông số cấu hình (tùy chỉnh độc lập cho cả 2 cổng)}
 
 \subsubsection{3.1.2/3.2.2 Địa Chỉ Modbus (MB Address)}
 \begin{lcdbox}
@@ -652,7 +663,7 @@ Khi truy cập \textbf{Cài Đặt Modbus} hoặc \textbf{Cài Đặt Cảm Bi�
 
 \subsection{Cấu Hình Cảm Biến pH}
 \textbf{Đường dẫn:} Cài Đặt Cảm Biến $\rightarrow$ \textbf{4.1 Cấu Hình Cảm Biến pH}\\
-Gồm 5 mục con:
+Gồm 6 mục con:
 
 \begin{table}[H]
 \centering
@@ -660,14 +671,57 @@ Gồm 5 mục con:
 \hline
 \textbf{Mục} & \textbf{Chức năng} & \textbf{Chi tiết} \\ \hline
 \textbf{4.1.1 Hiệu Chuẩn pH} & Hiệu chuẩn pH 2 điểm hoặc 3 điểm & Xem Mục \ref{sec:calib_ph} \\ \hline
-\textbf{4.1.2 Bộ Lọc Số} & Điều chỉnh mức lọc tín hiệu & Xem bên dưới \\ \hline
-\textbf{4.1.3 Chế Độ Nhiệt Độ} & Chọn ATC/MTC và đơn vị $^\circ$C/$^\circ$F & Xem bên dưới \\ \hline
-\textbf{4.1.4 Cài Đặt Nhiệt Độ} & Nhập nhiệt độ thủ công / offset & Xem bên dưới \\ \hline
-\textbf{4.1.5 Bù Tuyến Tính T} & Hệ số bù tuyến tính alpha (\%/$^\circ$C) & Xem bên dưới \\ \hline
+\textbf{4.1.2 Sức Khỏe Cảm Biến} & Chẩn đoán độ nhạy Slope \% \& Lệch 0 mV & Xem bên dưới \\ \hline
+\textbf{4.1.3 Bộ Lọc Số} & Điều chỉnh mức lọc tín hiệu & Xem bên dưới \\ \hline
+\textbf{4.1.4 Chế Độ Nhiệt Độ} & Chọn ATC/MTC và đơn vị $^\circ$C/$^\circ$F & Xem bên dưới \\ \hline
+\textbf{4.1.5 Cài Đặt Nhiệt Độ} & Nhập nhiệt độ thủ công / offset & Xem bên dưới \\ \hline
+\textbf{4.1.6 Bù Tuyến Tính T} & Hệ số bù tuyến tính alpha (\%/$^\circ$C) & Xem bên dưới \\ \hline
 \end{tabularx}
 \end{table}
 
-\subsubsection{4.1.2 Bộ Lọc Số (Digital Filter)}
+\subsubsection{4.1.2 Sức Khỏe Cảm Biến (Sensor Health)}
+Màn hình kiểm tra Sức Khỏe Cảm Biến cho phép người dùng theo dõi và chẩn đoán tình trạng hoạt động, mức độ lão hóa của điện cực pH dựa trên kết quả hiệu chuẩn thực tế.
+
+\begin{lcdbox}
+% \begin{verbatim}
+% ┌──────────────────────────────┐
+% │▌ Suc Khoe Cam Bien pH       ▐│
+% │ Slope : 97.5% (57.7mV)       │  ← Độ nhạy Nernst quy đổi (%) & mV/pH ở 25°C
+% │ Zero  : -12.0 mV             │  ← Điểm lệch 0 (Offset mV tại pH 7.00)
+% │ Danh gia: TOT (OK)           │  ← Trạng thái đánh giá điện cực
+% │ Dien cuc hoat dong tot       │
+% │▌HUY                   THOAT ▐│
+% └──────────────────────────────┘
+% \end{verbatim}
+\begin{figure}[H]
+        \centering
+        \includegraphics[width=0.5\textwidth]{phHealth.png}
+        \caption{Giao diện màn hình thông tin sức khỏe pH}
+        \label{fig:phHealth}
+    \end{figure}
+\end{lcdbox}
+
+\textbf{Các thông số chẩn đoán:}
+\begin{itemize}[label={-}]
+    \item \textbf{Slope (\%):} Độ nhạy thực tế của điện cực pH so với độ dốc Nernst lý thuyết ($59.16\text{ mV/pH}$ ở $25^\circ\text{C}$). Điện cực mới thường đạt $95\% -- 105\%$.
+    \item \textbf{Zero Offset (mV):} Điện áp ngõ ra của điện cực khi nhúng vào dung dịch chuẩn pH 7.00. Điện cực chuẩn có điện áp $0\text{ mV}$.
+    \item \textbf{Đánh giá trạng thái:}
+    \begin{itemize}[label={+}]
+        \item \textbf{TỐT (GOOD / OK):} Khi hệ thống đã hiệu chuẩn và đạt điều kiện $Slope \ge 80\%$ cùng $|Zero| \le 30\text{ mV}$.
+        \item \textbf{CẦN VỆ SINH ĐIỆN CỰC / CẢM BIẾN GIÀ (CLEAN SENSOR / AGING):} Hiển thị banner đen cảnh báo khi $Slope < 80\%$ hoặc $|Zero| > 30\text{ mV}$, nhắc nhở người vận hành cần ngâm rửa vệ sinh bám bẩn điện cực bằng dung dịch HCl 0.1M / KCl hoặc thay mới điện cực.
+        \item \textbf{CHƯA HIỆU CHUẨN (Not Calibrated):} Màn hình nhắc nhở \textit{"Chưa Hiệu Chuẩn! Vui lòng calib pH để tính sức khỏe"} nếu hệ thống chưa từng thực hiện hiệu chuẩn thành công.
+        \begin{lcdbox}
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=0.5\textwidth]{not_calib.png}
+        \caption{Giao diện màn hình khi chưa hiệu chuẩn}
+        \label{fig:not_calib}
+    \end{figure}
+        \end{lcdbox}
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{4.1.3 Bộ Lọc Số (Digital Filter)}
 Điều chỉnh độ nhạy/ổn định của giá trị pH hiển thị:
 \begin{itemize}[label={-}]
     \item \textbf{Thấp (L)}: Phản hồi nhanh, giá trị dao động nhiều hơn
@@ -675,7 +729,7 @@ Gồm 5 mục con:
     \item \textbf{Cao (H)}: Giá trị ổn định nhất, phản hồi chậm hơn
 \end{itemize}
 
-\subsubsection{4.1.3 Chế Độ Nhiệt Độ (Temp Mode)}
+\subsubsection{4.1.4 Chế Độ Nhiệt Độ (Temp Mode)}
 \begin{table}[H]
 \centering
 \begin{tabularx}{\textwidth}{|c|X|}
@@ -690,7 +744,7 @@ Gồm 5 mục con:
 
 \textit{Ghi chú: ATC = Automatic Temperature Compensation; MTC = Manual Temperature Compensation.}
 
-\subsubsection{4.1.4 Cài Đặt Nhiệt Độ (Temp Settings)}
+\subsubsection{4.1.5 Cài Đặt Nhiệt Độ (Temp Settings)}
 \textbf{Nếu đang ở chế độ MTC} (thủ công):
 \begin{lcdbox}
 % \begin{verbatim}
@@ -740,7 +794,7 @@ Gồm 5 mục con:
     \item \textbf{ATC Offset:} Phạm vi -10.0 -- +10.0$^\circ$C (-18.0 -- +18.0$^\circ$F).
 \end{itemize}
 
-\subsubsection{4.1.5 Bù Tuyến Tính Nhiệt Độ (Temp Linear Compensation)}
+\subsubsection{4.1.6 Bù Tuyến Tính Nhiệt Độ (Temp Linear Compensation)}
 Chức năng này cho phép người dùng cài đặt \textbf{hệ số bù nhiệt tuyến tính $\alpha$} (alpha) dưới dạng phần trăm (\%/$^\circ$C), nhằm \textbf{hiệu chỉnh sai lệch pH do thay đổi nhiệt độ} của dung dịch.
 
 \textbf{Nguyên lý hoạt động:} Đây là một khâu xử lý \textbf{hoàn toàn bằng phần mềm} --- không tác động vật lý lên đầu dò pH. Hệ thống lấy \textbf{25$^\circ$C} làm nhiệt độ tham chiếu và tính toán theo công thức:
@@ -942,26 +996,282 @@ Nhập giá trị nhiệt độ chuẩn từ nhiệt kế tham chiếu (phạm v
 
 %------------------------------------------------
 
-% \section{Web Portal}
+\section{Xem Lại Lịch Sử (History Log)}
+\label{sec:history_log}
 
-% \subsection{Kết nối WiFi}
-% Thiết bị tạo \textbf{điểm phát WiFi (Access Point)} ngay khi khởi động:
-% \begin{itemize}[label={-}]
-%     \item \textbf{Tên WiFi (SSID):} \texttt{MEBICO\_ESP32\_PH\_xxxx} (xxxx là mã riêng của thiết bị)
-%     \item \textbf{Mật khẩu WiFi:} \texttt{Mebico@69696969}
-%     \item \textbf{Truy cập Web Portal:} \url{http://192.168.4.1}
-% \end{itemize}
+\textbf{Đường dẫn:} Menu Chính $\rightarrow$ \textbf{5 Xem Lại Lịch Sử}
 
-% \subsection{Chức năng Web Portal}
-% \begin{itemize}[label={-}]
-%     \item \textbf{Wi-Fi Manager:} Quét mạng WiFi xung quanh để kết nối internet.
-%     \item \textbf{Dữ liệu thời gian thực:} Xem giá trị trực tiếp.
-%     \item \textbf{Màn hình từ xa:} Hiển thị ảnh LCD ảo + 5 nút bấm ảo điều khiển.
-%     \item \textbf{Cài đặt \& Cấu hình:} Thay đổi hiệu chuẩn, Modbus, Azure IoT Hub.
-% \end{itemize}
+Chức năng này cho phép người dùng xem lại toàn bộ nhật ký dữ liệu đo lường (pH, nhiệt độ, DO) đã được tự động ghi nhận và lưu trữ vào bộ nhớ FRAM không mất dữ liệu.
 
-% %------------------------------------------------
+\begin{lcdbox}
+% \begin{verbatim}
+% ┌──────────────────────────────┐
+% │▌ Xem Lai Lich Su            ▐│
+% │ #1/120 15/07 09:30           │  ← [Thứ tự / Tổng số bản ghi] [Ngày/Tháng Giờ:Phút]
+% │ pH   : 7.02                  │  ← Giá trị pH lưu trữ
+% │ Temp : 25.0 °C               │  ← Giá trị Nhiệt độ lưu trữ
+% │ DO   : 6.85 mg/L             │  ← Giá trị DO lưu trữ
+% │                              │
+% │▌ESC  ▼  ▲                  ▐│  ← Nút bấm hướng dẫn cuộn bản ghi
+% └──────────────────────────────┘
+% \end{verbatim}
+\begin{figure}[H]
+        \centering
+        \includegraphics[width=0.5\textwidth]{history_log.png}
+        \caption{Giao diện màn hình quét wifi}
+        \label{fig:history_log}
+    \end{figure}
+\end{lcdbox}
 
+\textbf{Thao tác tra cứu:}
+\begin{itemize}[label={-}]
+    \item \textbf{DOWN ▼}: Cuộn đến bản ghi cũ hơn trong quá khứ (\#1 $\rightarrow$ \#2 $\rightarrow$ ... $\rightarrow$ \#tổng số). Khi ở bản ghi cũ nhất, bấm DOWN sẽ quay về bản ghi mới nhất (\#1).
+    \item \textbf{UP ▲}: Di chuyển ngược về bản ghi mới hơn (\#tổng số $\rightarrow$ ... $\rightarrow$ \#1). Khi ở bản ghi \#1, bấm UP sẽ tự động nhảy đến bản ghi cũ nhất.
+    \item \textbf{ESC}: Thoát màn hình lịch sử và quay về Menu Chính.
+\end{itemize}
+
+\begin{notebox}
+Nếu bộ nhớ FRAM chưa có dữ liệu lưu trữ nào, màn hình sẽ hiển thị thông báo \textbf{"Chưa có dữ liệu"} (hoặc \textbf{"No Data Stored"}).
+\end{notebox}
+
+%------------------------------------------------
+
+\section{Cài Đặt WiFi (WiFi Settings)}
+\label{sec:wifi_settings}
+
+\textbf{Đường dẫn:} Menu Chính $\rightarrow$ \textbf{6 Cài Đặt WiFi}
+
+Chức năng Cài Đặt WiFi cho phép thiết bị kết nối với mạng không dây internet để tự động đồng bộ thời gian thực qua máy chủ NTP, đồng thời truyền dữ liệu đo lường lên hệ thống quản lý đám mây (Azure IoT Hub / MQTT) và Web Portal.
+
+Menu Cài Đặt WiFi bao gồm 2 mục chức năng:
+\begin{enumerate}
+    \item \textbf{6.1 Quét \& Kết Nối} (WiFi Networks) --- Quét tìm danh sách các trạm phát WiFi xung quanh và nhập mật khẩu để kết nối.
+    \item \textbf{6.2 Trạng Thái WiFi} (WiFi Status) --- Hiển thị tình trạng kết nối, SSID đang lưu, địa chỉ IP mạng STA và địa chỉ IP Trạm phát AP nội bộ.
+\end{enumerate}
+
+\subsection{6.1 Quét \& Kết Nối (Scan \& Connect)}
+\textbf{Đường dẫn:} Menu Chính $\rightarrow$ Cài Đặt WiFi $\rightarrow$ \textbf{6.1 Quét \& Kết Nối}
+
+\subsubsection{Bước 1 -- Quét danh sách mạng WiFi}
+Khi truy cập mục này, thiết bị sẽ tự động kích hoạt tiến trình quét sóng WiFi thời gian thực. Màn hình tạm thời hiển thị thông báo: \textbf{"Đang quét WiFi..."} (hoặc \textbf{"Scanning WiFi..."}).
+
+Sau 2--3 giây, hệ thống trả về danh sách tối đa 16 mạng WiFi (Access Point) có tín hiệu mạnh nhất:
+
+\begin{lcdbox}
+% \begin{verbatim}
+% ┌──────────────────────────────┐
+% │▌ Danh Sach WiFi             ▐│  ← Tiêu đề màn hình
+% │                              │
+% │ ▶Home_WiFi_5G (-62)     ▶    │  ← Tên WiFi (SSID) + Cường độ tín hiệu (RSSI)
+% │  CongTy_Mebi (-78)           │  ← Hiển thị 4 mục cùng lúc, dùng ▲/▼ để cuộn
+% │  CaFe_Wifi (-85)            │
+% │  Phong_KT (-90)             │
+% │                              │
+% │▌▼  ▲               ESC  ENT ▐│  ← Thanh trạng thái hướng dẫn nút bấm
+% └──────────────────────────────┘
+% \end{verbatim}
+\begin{figure}[H]
+        \centering
+        \includegraphics[width=0.5\textwidth]{wifi_scanning.png}
+        \caption{Giao diện màn hình quét wifi}
+        \label{fig:wifi_scanning}
+    \end{figure}
+\end{lcdbox}
+
+
+\begin{lcdbox}
+
+\begin{figure}[H]
+        \centering
+        \includegraphics[width=0.5\textwidth]{wifi_Scaned.png}
+        \caption{Giao diện màn hình các wifi hiện có cùng độ mạnh tín hiệu}
+        \label{fig:wifi_Scaned}
+    \end{figure}
+\end{lcdbox} 
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|c|X|}
+\hline
+\textbf{Nút bấm} & \textbf{Chức năng} \\ \hline
+\textbf{UP ▲} & Di chuyển vạch chọn lên mạng WiFi phía trên \\ \hline
+\textbf{DOWN ▼} & Di chuyển vạch chọn xuống mạng WiFi phía dưới \\ \hline
+\textbf{ENTER} & \textbf{Xác nhận chọn mạng WiFi} đang chọn $\rightarrow$ Chuyển sang màn hình Nhập Mật Khẩu \\ \hline
+\textbf{ESC} & Hủy bỏ và quay lại menu Cài Đặt WiFi \\ \hline
+\end{tabularx}
+\end{table}
+
+\begin{tipbox}
+\begin{itemize}[label={-}]
+    \item Số trong ngoặc đơn sau tên SSID là chỉ số cường độ tín hiệu \textbf{RSSI (dBm)}. Giá trị càng gần 0 thì sóng càng mạnh (ví dụ: \texttt{-62 dBm} mạnh hơn \texttt{-85 dBm}).
+    \item Nếu không tìm thấy WiFi nào, màn hình hiện \textbf{"Không tìm thấy WiFi!"}. Bạn có thể bấm nút \textbf{ENTER} (\texttt{ENT: Quét Lại}) để kích hoạt quét lại.
+\end{itemize}
+\end{tipbox}
+
+\subsubsection{Bước 2 -- Nhập mật khẩu WiFi (Character Picker / Spin-Box)}
+\textbf{Đường dẫn:} Danh Sách WiFi $\rightarrow$ *(Chọn 1 mạng WiFi)* $\rightarrow$ **Nhập Mật Khẩu**
+
+Màn hình nhập mật khẩu sử dụng bộ chọn ký tự dạng xoay vòng (Character Picker / Spin-Box) giúp người dùng nhập đầy đủ mật khẩu bằng 5 nút bấm cơ học:
+
+\begin{lcdbox}
+% \begin{verbatim}
+% ┌──────────────────────────────┐
+% │▌ Nhap Mat Khau              ▐│  ← Tiêu đề màn hình
+% │ SSID: Home_WiFi_5G           │  ← Tên WiFi đã chọn ở Bước 1
+% │ Pass: ********_              │  ← Mật khẩu đang nhập (dấu * ẩn bảo mật)
+% │                              │
+% │  [ a ]   [DEL]   [LUU]       │  ← Ô chọn Ký tự / Nút Xóa / Nút Lưu
+% │                              │
+% │▌ESC  -/+    ►       ENT     ▐│  ← Nút bấm hướng dẫn
+% └──────────────────────────────┘
+% \end{verbatim}
+\begin{figure}[H]
+        \centering
+        \includegraphics[width=0.5\textwidth]{wifi_password.png}
+        \caption{Giao diện màn hình nhập mật khẩu wifi}
+        \label{fig:wifi_password}
+    \end{figure}
+\end{lcdbox}
+
+Giao diện gồm 3 ô chọn tương tác (\textbf{Focus Areas}):
+\begin{enumerate}
+    \item \textbf{[ Char ] (Bộ chọn ký tự):} Cho phép cuộn xoay vòng chọn các ký tự gồm:
+    \begin{itemize}[label={-}]
+        \item Chữ cái thường: \texttt{a} -- \texttt{z}
+        \item Chữ cái hoa: \texttt{A} -- \texttt{Z}
+        \item Chữ số: \texttt{0} -- \texttt{9}
+        \item Ký tự đặc biệt: \texttt{! @ \# \$ \% \textasciicircum{} \& * ( ) - \_ = + . , : ; ? / \textbackslash{} \textbar{} \textasciitilde{}}
+        \item Dấu cách: \texttt{[ SPC ]} (Space)
+    \end{itemize}
+    \item \textbf{[DEL] (Nút xóa):} Xóa 1 ký tự ở cuối chuỗi mật khẩu vừa nhập.
+    \item \textbf{[LUU] / [OK] (Nút lưu):} Xác nhận mật khẩu, ghi vào bộ nhớ Flash (NVS) và khởi chạy tiến trình kết nối.
+\end{enumerate}
+
+\textbf{Quy tắc điều hướng nút bấm khi Nhập Mật Khẩu:}
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|c|X|}
+\hline
+\textbf{Nút bấm} & \textbf{Thao tác \& Chức năng} \\ \hline
+\textbf{RIGHT ►} & Di chuyển con trỏ chọn (focus) xoay vòng: \textbf{[ Char ]} $\rightarrow$ \textbf{[DEL]} $\rightarrow$ \textbf{[LUU]} $\rightarrow$ \textbf{[ Char ]} \\ \hline
+\textbf{UP ▲} & Tăng / Chuyển sang ký tự tiếp theo trong bảng chữ cái (khi ở ô Char) \\ \hline
+\textbf{DOWN ▼} & Giảm / Chuyển sang ký tự phía trước trong bảng chữ cái (khi ở ô Char) \\ \hline
+\textbf{ENTER} & \begin{itemize}[leftmargin=*,nosep]
+                    \item Tại \textbf{[ Char ]}: Chèn ký tự đang chọn vào chuỗi mật khẩu
+                    \item Tại \textbf{[DEL]}: Xóa 1 ký tự vừa nhập
+                    \item Tại \textbf{[LUU]}: Lưu cấu hình vào Flash (NVS), hiện thông báo popup \textbf{"Kết Nối WiFi - Đang Kết Nối..."} và tự động chuyển sang trang \textbf{Trạng Thái WiFi}
+                 \end{itemize} \\ \hline
+\textbf{ESC} & Hủy bỏ và quay lại màn hình danh sách quét WiFi \\ \hline
+\end{tabularx}
+\end{table}
+
+\subsection{6.2 Trạng Thái WiFi (WiFi Status)}
+\textbf{Đường dẫn:} Menu Chính $\rightarrow$ Cài Đặt WiFi $\rightarrow$ \textbf{6.2 Trạng Thái WiFi}
+
+Trang này hiển thị thông số kết nối thời gian thực và địa chỉ IP của thiết bị:
+
+\begin{lcdbox}
+% \begin{verbatim}
+% ┌──────────────────────────────┐
+% │▌ Trang Thai WiFi            ▐│  ← Tiêu đề màn hình
+% │ Status: CONNECTED            │  ← Trạng thái kết nối (CONNECTED / CONNECTING...)
+% │ SSID: Home_WiFi_5G           │  ← Tên WiFi STA đang kết nối
+% │ IP: 192.168.1.105            │  ← Địa chỉ IP mạng STA (do Router cấp qua DHCP)
+% │ AP: 192.168.14.1             │  ← Địa chỉ IP Trạm phát AP nội bộ (Web Portal)
+% │                              │
+% │▌ESC                         ▐│  ← Bấm ESC để quay lại
+% └──────────────────────────────┘
+% \end{verbatim}
+\begin{figure}[H]
+        \centering
+        \includegraphics[width=0.5\textwidth]{wifi_status.png}
+        \caption{Giao diện màn hình trạng thái wifi}
+        \label{fig:wifi_status}
+    \end{figure}
+\end{lcdbox}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|X|}
+\hline
+\textbf{Thông số} & \textbf{Giải thích chi tiết} \\ \hline
+\textbf{Status} & \begin{itemize}[leftmargin=*,nosep]
+                    \item \textbf{CONNECTED}: Đã kết nối thành công với Router/Trạm phát.
+                    \item \textbf{CONNECTING...}: Đang thử kết nối hoặc chưa cài đặt WiFi.
+                 \end{itemize} \\ \hline
+\textbf{SSID} & Tên mạng WiFi đang lưu trong bộ nhớ Flash (hiển thị \texttt{None} nếu chưa cài). \\ \hline
+\textbf{IP} & Địa chỉ IP nội bộ cấp bởi Router qua DHCP (ví dụ: \texttt{192.168.1.70}). Hiển thị \texttt{0.0.0.0} nếu chưa kết nối. \\ \hline
+\textbf{AP} & Địa chỉ IP cố định của thiết bị khi hoạt động ở chế độ Trạm phát Access Point nội bộ (\texttt{192.168.14.1}) dùng để truy cập Web Portal. \\ \hline
+\end{tabularx}
+\end{table}
+
+\subsection{Các phương thức cấu hình WiFi bổ sung}
+
+Bên cạnh thao tác trực tiếp bằng nút bấm trên màn hình LCD, thiết bị còn hỗ trợ 2 phương thức quản lý cấu hình WiFi linh hoạt khác:
+
+\subsubsection{1. Cấu hình qua Web Portal (Chế độ Trạm phát AP)}
+Khi khởi động, thiết bị tạo 1 mạng WiFi Access Point riêng giúp người dùng dễ dàng cấu hình bằng điện thoại hoặc máy tính:
+\begin{itemize}[label={-}]
+    \item \textbf{Tên WiFi (SSID AP):} \texttt{MEBICO\_ESP32\_PH\_xxxx} (\texttt{xxxx} là mã định danh riêng của thiết bị).
+    \item \textbf{Mật khẩu AP:} \texttt{Mebico@69696969}
+    \item \textbf{Địa chỉ truy cập Web Portal:} mở trình duyệt web truy cập \url{http://192.168.14.1} (hoặc \url{http://192.168.4.1}).
+    \item \textbf{Giao diện Wi-Fi Manager:} Quét mạng, chọn SSID, nhập mật khẩu và bấm lưu cấu hình ngay trên trình duyệt.
+\end{itemize}
+
+\subsubsection{2. Đổi cấu hình từ xa qua Azure IoT Hub (Direct Method \& Automatic Fallback)}
+Hệ thống hỗ trợ thay đổi cấu hình WiFi từ xa thông qua lệnh Direct Method của Azure IoT Hub với payload JSON target là \texttt{"wifi"}:
+
+\begin{verbatim}
+{
+  "Target": "wifi",
+  "SSID": "Wifi_Moi_2026",
+  "Password": "MatKhauMoi123"
+}
+\end{verbatim}
+
+\begin{cautionbox}
+\textbf{Cơ chế tự động khôi phục (Automatic Fallback):} Khi nhận lệnh thay đổi WiFi mới từ xa, thiết bị sẽ dùng thử WiFi mới trong khoảng thời gian chờ timeout. Nếu kết nối thất bại (do sai mật khẩu, SSID không tồn tại hoặc sóng quá yếu), thiết bị sẽ \textbf{tự động khôi phục lại cấu hình WiFi cũ} để tránh nguy cơ mất liên lạc hoàn toàn với hệ thống Cloud.
+\end{cautionbox}
+
+%------------------------------------------------
+
+\section{Thông Tin Thiết Bị (Device Info)}
+\label{sec:device_info}
+
+\textbf{Đường dẫn:} Menu Chính $\rightarrow$ \textbf{7 Thông Tin Thiết Bị}
+
+Màn hình Thông Tin Thiết Bị cung cấp giao diện cuộn danh sách (Scrollable View) tập trung hiển thị toàn bộ các thông số vận hành và trạng thái hệ thống, được gom thành 3 nhóm thông tin chuyên sâu:
+
+\begin{enumerate}
+    \item \textbf{Nhóm 1 -- Mạng \& Azure (Net \& Azure):}
+    \begin{itemize}[label={-}]
+        \item \textbf{WiFi:} Trạng thái kết nối (\texttt{Connected} / \texttt{Disconnected}).
+        \item \textbf{SSID:} Tên WiFi đang kết nối.
+        \item \textbf{Signal:} Cường độ tín hiệu WiFi thời gian thực (\texttt{-58 dBm}).
+        \item \textbf{IP:} Địa chỉ IP STA mạng nội bộ (ví dụ: \texttt{192.168.1.50}).
+        \item \textbf{Azure:} Trạng thái kết nối Đám mây Azure IoT Hub.
+        \item \textbf{Dev ID \& Hub:} Mã định danh thiết bị và Hostname máy chủ Cloud.
+    \end{itemize}
+    \item \textbf{Nhóm 2 -- Hệ Thống \& OTA (System \& OTA):}
+    \begin{itemize}[label={-}]
+        \item \textbf{Free RAM:} Dung lượng bộ nhớ RAM khả dụng (\texttt{79.1 KB}).
+        \item \textbf{Uptime:} Thời gian hoạt động liên tục từ lúc bật nguồn (ví dụ: \texttt{1h 3m 37s}).
+        \item \textbf{Firmware:} Phiên bản phần mềm hiện tại (\texttt{v1.0.2}).
+        \item \textbf{Active Slot:} Phân vùng ứng dụng đang chạy (\texttt{ota\_0}, \texttt{ota\_1} hoặc \texttt{factory}).
+        \item \textbf{OTA Status:} Trạng thái tiến trình cập nhật từ xa (\texttt{Idle}, \texttt{Downloading}...).
+    \end{itemize}
+    \item \textbf{Nhóm 3 -- Giờ \& Nguồn (Time \& Reset):}
+    \begin{itemize}[label={-}]
+        \item \textbf{Time:} Thời gian thực hiện tại (\texttt{DD/MM HH:MM:SS}).
+        \item \textbf{Sync:} Trạng thái đồng bộ đồng hồ (\texttt{Synced (NTP/PC)} hoặc \texttt{Unsynced}).
+        \item \textbf{Reset:} Nguyên nhân khởi động lại gần nhất (ví dụ: \texttt{Power-on Reset}, \texttt{Software Reset}).
+        \item \textbf{Reset Count:} Tổng số lần khởi động lại của thiết bị (ví dụ: \texttt{437}).
+    \end{itemize}
+\end{enumerate}
+
+\textbf{Thao tác điều hướng:} Nhấn nút \textbf{UP ▲} hoặc \textbf{DOWN ▼} để cuộn danh sách thông tin. Nhấn \textbf{ESC} để quay lại Menu Chính.
+
+%------------------------------------------------
 
 \section{Khởi Động Lại Thiết Bị}
 \label{sec:reboot}
@@ -969,16 +1279,6 @@ Nhập giá trị nhiệt độ chuẩn từ nhiệt kế tham chiếu (phạm v
 Thiết bị hỗ trợ \textbf{khởi động lại bằng phần mềm} (software reboot).
 \textbf{Cách thực hiện:} Nhấn \textbf{giữ nút ENTER liên tục trong 7 giây} ở \textbf{bất kỳ màn hình nào}.
 
-% \begin{verbatim}
-% Nhấn giữ ENTER ────→ Đợi 7 giây ────→ Màn hình hiện thông báo:
-%                                          ┌──────────────────────────┐
-%                                          │                          │
-%                                          │   DANG KHOI DONG         │
-%                                          │   LAI HE THONG...        │
-%                                          │                          │
-%                                          └──────────────────────────┘
-%                                          ────→ Đợi 1 giây ────→ Thiết bị reset
-% \end{verbatim}
 \begin{lcdbox}
     \begin{figure}[H]
         \centering
@@ -988,8 +1288,6 @@ Thiết bị hỗ trợ \textbf{khởi động lại bằng phần mềm} (softw
     \end{figure}
 \end{lcdbox}
 
-
-
 \begin{warningbox}
 Khởi động lại \textbf{không làm mất} dữ liệu cài đặt vì tất cả đã được lưu vào bộ nhớ NVS Flash. Tuy nhiên, biểu đồ thời gian thực sẽ bị xóa.
 \end{warningbox}
@@ -997,9 +1295,10 @@ Khởi động lại \textbf{không làm mất} dữ liệu cài đặt vì tấ
 %------------------------------------------------
 
 % \section{Sơ Đồ Cây Menu Đầy Đủ}
+% \label{sec:menu_tree}
 
 % \begin{notebox}
-% Dưới đây là sơ đồ Mermaid gốc trong tài liệu Markdown. Để hiển thị dưới dạng hình ảnh đồ họa trong LaTeX, bạn có thể copy đoạn text này dán vào \href{https://mermaid.live/}{Mermaid Live Editor} rồi xuất file hình ảnh (.png) để chèn vào.
+% Dưới đây là sơ đồ Mermaid mô tả cấu trúc cây menu hoàn chỉnh của thiết bị. Để hiển thị dưới dạng hình ảnh đồ họa trong LaTeX, bạn có thể copy đoạn text này dán vào \href{https://mermaid.live/}{Mermaid Live Editor} rồi xuất file hình ảnh (.png) để chèn vào tài liệu.
 % \end{notebox}
 
 % \begin{verbatim}
@@ -1012,26 +1311,53 @@ Khởi động lại \textbf{không làm mất} dữ liệu cài đặt vì tấ
 %     MAIN --> DISP["2. Cài Đặt Hiển Thị"]
 %     MAIN -->|[Mật khẩu]| MBUS["3. Cài Đặt Modbus"]
 %     MAIN -->|[Mật khẩu]| SENSOR["4. Cài Đặt Cảm Biến"]
+%     MAIN --> LOG["5. Xem Lại Lịch Sử"]
+%     MAIN --> WIFI["6. Cài Đặt WiFi"]
     
-%     SYS --> LANG["1.1 Ngôn Ngữ<br/>Tiếng Anh / Tiếng Việt"]
-%     SYS --> DATE["1.2 Ngày Tháng"]
-%     SYS --> SCREEN["1.3 Cài Đặt Màn Hình"]
-%     ... [v.v...]
+%     SYS --> LANG["1.1 Ngôn Ngữ (Tiếng Anh / Tiếng Việt)"]
+%     SYS --> DATE["1.2 Ngày Tháng (Định dạng & Cài giờ)"]
+%     SYS --> SCREEN["1.3 Cài Đặt Màn Hình (Contrast & Resistor)"]
+%     SYS --> PASS["1.4 Thay Đổi Mật Khẩu (Password)"]
+
+%     DISP --> D1["2.1 Chế Độ pH"]
+%     DISP --> D2["2.2 Chế Độ DO"]
+%     DISP --> D3["2.3 Chế Độ pH & DO"]
+
+%     MBUS --> MB1["3.1 Cổng Modbus 1 (External)"]
+%     MBUS --> MB2["3.2 Cổng Modbus 2 (DO Sensor)"]
+
+%     SENSOR --> S_PH["4.1 Cấu Hình Cảm Biến pH"]
+%     SENSOR --> S_DO["4.2 Cấu Hình Cảm Biến DO"]
+
+%     S_PH --> CAL_PH["4.1.1 Hiệu Chuẩn pH (2D / 3D / Reset)"]
+%     S_PH --> HEALTH["4.1.2 Sức Khỏe Cảm Biến (Slope % & Zero mV)"]
+%     S_PH --> FILT["4.1.3 Bộ Lọc Số (Thấp / Vừa / Cao)"]
+%     S_PH --> T_MODE["4.1.4 Chế Độ Nhiệt Độ (ATC / MTC, °C / °F)"]
+%     S_PH --> T_SET["4.1.5 Cài Đặt Nhiệt Độ (Nhập tay / Offset)"]
+%     S_PH --> T_LIN["4.1.6 Bù Tuyến Tính T (Hệ số alpha %/°C)"]
+
+%     S_DO --> CAL_DO["4.2.1 Hiệu Chuẩn DO (Điểm 0 / Độ dốc / Temp)"]
+%     S_DO --> RES_DO["4.2.2 Reset Hiệu Chuẩn DO"]
+
+%     WIFI --> W_SCAN["6.1 Quét & Kết Nối (Scan & Connect)"]
+%     WIFI --> W_STAT["6.2 Trạng Thái WiFi (WiFi Status)"]
+%     W_SCAN --> W_PASS["Nhập Mật Khẩu (Spin-Box / Picker)"]
 % \end{verbatim}
 
 % %------------------------------------------------
 
-
 \section{Bảng Tra Cứu Nhanh Nút Bấm}
+\label{sec:button_lookup}
 
 \begin{table}[H]
 \centering
 \begin{tabularx}{\textwidth}{|l|X|l|X|}
 \hline
-\multicolumn{2}{|c|}{\textbf{Màn hình đo lường}} & \multicolumn{2}{c|}{\textbf{Menu danh sách}} \\ \hline
-\textbf{ENTER} & Vào Menu Chính & \textbf{UP ▲} & Lên mục trước \\ \hline
-\textbf{RIGHT ►} & Chuyển Số $\leftrightarrow$ Biểu đồ & \textbf{DOWN ▼} & Xuống mục tiếp \\ \hline
-\textbf{Giữ ENTER 7s} & Khởi động lại & \textbf{ENTER / ESC} & Vào / Quay lại \\ \hline
+\multicolumn{2}{|c|}{\textbf{Màn hình đo lường}} & \multicolumn{2}{c|}{\textbf{Menu danh sách \& Cài đặt}} \\ \hline
+\textbf{ENTER} & Vào Menu Chính & \textbf{UP ▲} & Lên mục trước / Tăng giá trị / Ký tự tiếp \\ \hline
+\textbf{RIGHT ►} & Chuyển Số $\leftrightarrow$ Biểu đồ & \textbf{DOWN ▼} & Xuống mục tiếp / Giảm giá trị / Ký tự trước \\ \hline
+\textbf{Giữ ENTER 7s} & Khởi động lại thiết bị & \textbf{RIGHT ►} & Chuyển ô chọn (Nhập giờ, MK, WiFi) \\ \hline
+\textbf{ESC} & Quay lại trang trước & \textbf{ENTER} & Xác nhận / Chọn / Chèn ký tự / Lưu \\ \hline
 \end{tabularx}
 \end{table}
 
@@ -1040,7 +1366,7 @@ Khởi động lại \textbf{không làm mất} dữ liệu cài đặt vì tấ
 \begin{itemize}[label={-}]
     \item Mọi cài đặt được \textbf{lưu tự động} vào bộ nhớ Flash (NVS) và không bị mất khi mất điện.
     \item Nếu thiết bị có kết nối internet qua WiFi, thời gian sẽ được \textbf{tự động đồng bộ} qua NTP server.
-    \item Thiết bị hỗ trợ \textbf{cập nhật firmware từ xa} (OTA) qua Azure IoT Hub.
+    \item Thiết bị hỗ trợ \textbf{cập nhật firmware từ xa} (OTA) và đổi WiFi từ xa với cơ chế khôi phục tự động qua Azure IoT Hub.
 \end{itemize}
 \end{tipbox}
 
