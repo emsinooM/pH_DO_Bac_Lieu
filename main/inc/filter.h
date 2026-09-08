@@ -1,10 +1,14 @@
-#ifndef FILTER_H
-#define FILTER_H
+#pragma once
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define FILTER_L_SIZE 10    // 5s = 10 samples (at 500ms sampling)
 #define FILTER_M_SIZE 20    // 10s = 20 samples
@@ -102,4 +106,6 @@ void kalman1d_init(Kalman1D_t *k, float initial_val, float Q, float R);
 float kalman1d_update(Kalman1D_t *k, float measurement);
 void kalman1d_reset(Kalman1D_t *k, float reset_val);
 
-#endif // FILTER_H
+#ifdef __cplusplus
+}
+#endif

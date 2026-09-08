@@ -1,9 +1,13 @@
-#ifndef CS1237_H
-#define CS1237_H
+#pragma once
 
-#include "driver/gpio.h"
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "driver/gpio.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Cấu hình chân GPIO mặc định
 #define PH_DATA_PIN GPIO_NUM_17
@@ -26,4 +30,6 @@ bool read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin, int32_t *out_raw)
 
 uint8_t read_cs1237_config(gpio_num_t sclk_pin, gpio_num_t data_pin);
 
-#endif // CS1237_H
+#ifdef __cplusplus
+}
+#endif

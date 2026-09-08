@@ -25,10 +25,10 @@ idf_component_register(SRCS "src/cs1237.c"
                             "src/wifi_config_manager.c"
                     INCLUDE_DIRS "." ${COMPONENT_INCLUDE_DIRS}
                     REQUIRES    coreMQTT
-                                azure-sdk-for-c 
-                                azure-iot-middleware-freertos 
-                                sample-azure-iot 
-                                driver 
+                                azure-sdk-for-c
+                                azure-iot-middleware-freertos
+                                sample-azure-iot
+                                driver
                                 nvs_flash
                                 esp_netif
                                 esp_wifi

@@ -4,10 +4,13 @@
  *          Mỗi ký tự gồm 5 cột dữ liệu, chiều cao 7 pixel.
  */
 
-#ifndef FONT_H
-#define FONT_H
+#pragma once
 
 #include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 static const uint8_t font5x7[][5] = {
     {0x00, 0x00, 0x00, 0x00, 0x00}, /* ' ' (0x20) */
@@ -195,4 +198,6 @@ static const uint8_t bitmap_custom[1024] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // Row 63
 };
 
-#endif /* FONT_H */
+#ifdef __cplusplus
+}
+#endif

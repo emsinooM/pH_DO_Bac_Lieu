@@ -1,29 +1,32 @@
-#include "web_portal.h"
 #include <math.h>
-
-#include "cJSON.h"
-#include "esp_log.h"
-#include "esp_wifi.h"
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "esp_ota_ops.h"
-#include "user_azure.h"
-#include "user_ota.h"
-#include "wifi_config_manager.h"
-
-#include "do_sensor.h"
-#include "esp_timer.h"
-#include "ph_temp.h"
-#include "user_system.h"
-#include "screen_disp.h"
-#include "screen_menu.h"
-#include "ds3231.h"
-#include "filter.h"
-#include "user_storage.h"
-#include <stdarg.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "esp_log.h"
+#include "esp_ota_ops.h"
+#include "esp_timer.h"
+#include "esp_wifi.h"
+
+#include "cJSON.h"
+
+#include "do_sensor.h"
+#include "ds3231.h"
+#include "filter.h"
+#include "ph_temp.h"
+#include "screen_disp.h"
+#include "screen_menu.h"
+#include "user_azure.h"
+#include "user_ota.h"
+#include "user_storage.h"
+#include "user_system.h"
+#include "web_portal.h"
+#include "wifi_config_manager.h"
 
 static const char *PORTAL_TAG = "web_portal";
 
@@ -35,7 +38,8 @@ static portMUX_TYPE g_web_log_spinlock = portMUX_INITIALIZER_UNLOCKED;
 static vprintf_like_t g_default_vprintf_func = NULL;
 static bool g_web_log_inited = false;
 
-static int web_log_vprintf(const char *fmt, va_list args) {
+static int web_log_vprintf(const char *fmt, va_list args)
+{
   int ret = 0;
   if (g_default_vprintf_func) {
     va_list args_copy;
@@ -82,7 +86,8 @@ static int web_log_vprintf(const char *fmt, va_list args) {
   return ret;
 }
 
-void terminal_log_init(void) {
+void terminal_log_init(void)
+{
   if (!g_web_log_inited) {
     if (g_web_log_buf == NULL) {
       g_web_log_buf = (char *)malloc(WEB_LOG_BUFFER_SIZE);
@@ -1645,10 +1650,8 @@ static const char *portal_html =
     "scan();"
     "</script></body></html>";
 
-static esp_err_t portal_get_handler(httpd_req_t *req) {
-  // httpd_resp_set_type(req, "text/html");
-  // return httpd_resp_send(req, portal_html, HTTPD_RESP_USE_STRLEN);
-
+static esp_err_t portal_get_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     // Chưa đăng nhập -> Trả về giao diện Login
     httpd_resp_set_type(req, "text/html");
@@ -1660,7 +1663,8 @@ static esp_err_t portal_get_handler(httpd_req_t *req) {
   return httpd_resp_send(req, portal_html, HTTPD_RESP_USE_STRLEN);
 }
 
-static esp_err_t scan_get_handler(httpd_req_t *req) {
+static esp_err_t scan_get_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -1683,7 +1687,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
-  // Dùng mảng tĩnh 16 phần tử để giữ an toàn bộ nhớ Stack và Heap  
+  // Dùng mảng tĩnh 16 phần tử để giữ an toàn bộ nhớ Stack và Heap
   static wifi_ap_record_t ap_records[16];
   memset(ap_records, 0, sizeof(ap_records));
 
@@ -1707,14 +1711,16 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
 
     // 2. Lọc trùng SSID và lọc SSID rỗng
     for (uint16_t i = 0; i < ap_num; i++) {
-      if (ap_records[i].ssid[0] == '\0') continue;
+      if (ap_records[i].ssid[0] == '\0') {
+        continue;
+      }
 
       bool duplicate = false;
       int arr_size = cJSON_GetArraySize(arr);
       for (int k = 0; k < arr_size; k++) {
         cJSON *item = cJSON_GetArrayItem(arr, k);
         cJSON *existing_ssid = cJSON_GetObjectItem(item, "ssid");
-        if (existing_ssid && existing_ssid->valuestring && 
+        if (existing_ssid && existing_ssid->valuestring &&
           strcmp(existing_ssid->valuestring, (const char *)ap_records[i].ssid) == 0) {
           duplicate = true;
           break;
@@ -1732,7 +1738,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
 
   char *out = cJSON_PrintUnformatted(arr);
   cJSON_Delete(arr);
-  
+
   if (out == NULL) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json fail");
     return ESP_FAIL;
@@ -1743,7 +1749,8 @@ static esp_err_t scan_get_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t save_post_handler(httpd_req_t *req) {
+static esp_err_t save_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -1776,8 +1783,9 @@ static esp_err_t save_post_handler(httpd_req_t *req) {
       if (cJSON_IsString(ssid)) {
         const char *pass_str = (cJSON_IsString(pass)) ? pass->valuestring : "";
         ok = wifi_config_manager_save(ssid->valuestring, pass_str);
-        if (ok)
+        if (ok) {
           wifi_config_manager_schedule_connect();
+        }
       }
     } else if (strcmp(tgt->valuestring, "azure") == 0) {
       const cJSON *hostName = cJSON_GetObjectItem(root, "hostName");
@@ -1834,7 +1842,8 @@ static esp_err_t save_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t clear_post_handler(httpd_req_t *req) {
+static esp_err_t clear_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -1845,21 +1854,24 @@ static esp_err_t clear_post_handler(httpd_req_t *req) {
 
   char buf[128];
   int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-  if (ret <= 0)
+  if (ret <= 0) {
     return ESP_FAIL;
+  }
   buf[ret] = '\0';
 
   cJSON *root = cJSON_Parse(buf);
-  if (!root)
+  if (!root) {
     return ESP_FAIL;
+  }
 
   const cJSON *tgt = cJSON_GetObjectItem(root, "target");
   bool ok = false;
   if (cJSON_IsString(tgt)) {
-    if (strcmp(tgt->valuestring, "wifi") == 0)
+    if (strcmp(tgt->valuestring, "wifi") == 0) {
       ok = wifi_config_manager_clear();
-    else if (strcmp(tgt->valuestring, "azure") == 0)
+    } else if (strcmp(tgt->valuestring, "azure") == 0) {
       ok = azure_config_manager_clear();
+    }
   }
   cJSON_Delete(root);
 
@@ -1874,7 +1886,8 @@ static esp_err_t clear_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t login_post_handler(httpd_req_t *req) {
+static esp_err_t login_post_handler(httpd_req_t *req)
+{
   char buf[128];
   int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
   if (ret <= 0) {
@@ -1892,13 +1905,6 @@ static esp_err_t login_post_handler(httpd_req_t *req) {
   const cJSON *pass = cJSON_GetObjectItem(root, "password");
   bool ok = false;
   if (cJSON_IsString(pass)) {
-    // char stored[AUTH_SECRET_MAX_LEN] = {0};
-    // auth_secret_load(stored, sizeof(stored));
-    // printf("\n[DEBUG LOGIN] Nhập: '%s' (Độ dài: %d) | NVS lưu: '%s' (Độ dài:
-    // %d)\n\n",
-    //        pass->valuestring, strlen(pass->valuestring), stored,
-    //        strlen(stored));
-
     ok = auth_secret_verify(pass->valuestring);
   }
   cJSON_Delete(root);
@@ -1926,7 +1932,8 @@ static esp_err_t login_post_handler(httpd_req_t *req) {
   }
 }
 
-static esp_err_t logout_post_handler(httpd_req_t *req) {
+static esp_err_t logout_post_handler(httpd_req_t *req)
+{
   // Để đăng xuất, ta xóa cookie bằng cách set Max-Age=0
   httpd_resp_set_hdr(req, "Set-Cookie",
                      "session=; Path=/; Max-Age=0; HttpOnly");
@@ -1935,7 +1942,8 @@ static esp_err_t logout_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t system_status_get_handler(httpd_req_t *req) {
+static esp_err_t system_status_get_handler(httpd_req_t *req)
+{
   // Xác thực quyền truy cập
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
@@ -2068,7 +2076,8 @@ static esp_err_t system_status_get_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t scale_control_post_handler(httpd_req_t *req) {
+static esp_err_t scale_control_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -2213,7 +2222,8 @@ static esp_err_t scale_control_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t do_control_post_handler(httpd_req_t *req) {
+static esp_err_t do_control_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -2289,33 +2299,21 @@ static esp_err_t do_control_post_handler(httpd_req_t *req) {
       status_msg = "Khôi phục cài đặt gốc thất bại! Vui lòng kiểm tra lại kết "
                    "nối cảm biến.";
     }
-  }
-  else if (strcmp(action->valuestring, "RESET_DO_SENSOR") == 0) {
-        esp_err_t err = do_sensor_reset();
-        if (err == ESP_OK) {
-            status_msg = "Khôi phục cài đặt gốc thành công!";
-            success = true;
-        } else {
-            status_msg = "Khôi phục cài đặt gốc thất bại! Vui lòng kiểm tra lại kết nối cảm biến.";
-        }
-    } 
-    /* --- BẮT ĐẦU PHẦN THÊM MỚI --- */
-    else if (strcmp(action->valuestring, "COMPENSATE_SALINITY") == 0) {
-        const cJSON *val = cJSON_GetObjectItem(root, "value");
-        if (cJSON_IsNumber(val)) {
-            float salinity_val = (float)val->valuedouble;
-            esp_err_t err = do_sensor_set_salinity(salinity_val);
-            if (err == ESP_OK) {
-                status_msg = "Cập nhật bù độ mặn thành công!";
-                success = true;
-            } else {
-                status_msg = "Cập nhật bù độ mặn thất bại! Vui lòng kiểm tra lại kết nối cảm biến.";
-            }
-        } else {
-            status_msg = "Giá trị độ mặn không hợp lệ!";
-        }
+  } else if (strcmp(action->valuestring, "COMPENSATE_SALINITY") == 0) {
+    const cJSON *val = cJSON_GetObjectItem(root, "value");
+    if (cJSON_IsNumber(val)) {
+      float salinity_val = (float)val->valuedouble;
+      esp_err_t err = do_sensor_set_salinity(salinity_val);
+      if (err == ESP_OK) {
+        status_msg = "Cập nhật bù độ mặn thành công!";
+        success = true;
+      } else {
+        status_msg = "Cập nhật bù độ mặn thất bại! Vui lòng kiểm tra lại kết nối cảm biến.";
+      }
+    } else {
+      status_msg = "Giá trị độ mặn không hợp lệ!";
     }
-  else {
+  } else {
     status_msg = "Hành động không hỗ trợ!";
   }
 
@@ -2338,7 +2336,8 @@ static esp_err_t do_control_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t reboot_post_handler(httpd_req_t *req) {
+static esp_err_t reboot_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -2356,7 +2355,8 @@ static esp_err_t reboot_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t ota_trigger_post_handler(httpd_req_t *req) {
+static esp_err_t ota_trigger_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -2403,7 +2403,8 @@ static esp_err_t ota_trigger_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t screen_fb_get_handler(httpd_req_t *req) {
+static esp_err_t screen_fb_get_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -2420,7 +2421,8 @@ static esp_err_t screen_fb_get_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t simulate_btn_post_handler(httpd_req_t *req) {
+static esp_err_t simulate_btn_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -2460,7 +2462,8 @@ static esp_err_t simulate_btn_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t set_time_post_handler(httpd_req_t *req) {
+static esp_err_t set_time_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -2515,7 +2518,8 @@ static esp_err_t set_time_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t fake_telemetry_post_handler(httpd_req_t *req) {
+static esp_err_t fake_telemetry_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -2583,7 +2587,8 @@ static esp_err_t fake_telemetry_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t terminal_log_get_handler(httpd_req_t *req) {
+static esp_err_t terminal_log_get_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "text/plain");
@@ -2617,7 +2622,8 @@ static esp_err_t terminal_log_get_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static esp_err_t terminal_log_clear_post_handler(httpd_req_t *req) {
+static esp_err_t terminal_log_clear_post_handler(httpd_req_t *req)
+{
   if (!is_authenticated(req)) {
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -2646,7 +2652,8 @@ static esp_err_t terminal_log_clear_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-void web_portal_register_handlers(httpd_handle_t server) {
+void web_portal_register_handlers(httpd_handle_t server)
+{
   static httpd_uri_t portal = {.uri = "/",
                                .method = HTTP_GET,
                                .handler = portal_get_handler,

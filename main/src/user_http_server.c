@@ -1,13 +1,17 @@
-#include "user_http_server.h"
+#include <stdlib.h>
+#include <time.h>
+
+#include <sys/param.h>
+
+#include "esp_check.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
-#include "esp_check.h"
-#include <stdlib.h>
-#include <sys/param.h>
-#include "user_system.h"
 #include "mdns.h"
+
 #include "cJSON.h"
-#include "time.h"
+
+#include "user_http_server.h"
+#include "user_system.h"
 #include "web_portal.h"
 
 static const char *TAG = "http_server";
@@ -18,7 +22,7 @@ esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/echo URI is not available");
         return ESP_FAIL;
     }
-    
+
     httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not Found");
     return ESP_FAIL;
 }
@@ -44,8 +48,7 @@ static httpd_handle_t start_webserver(void)
 
     ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
     esp_err_t start_err = httpd_start(&server, &config);
-    if (start_err == ESP_OK) 
-    {
+    if (start_err == ESP_OK) {
         ESP_LOGI(TAG, "Registering Web Portal handlers");
         web_portal_register_handlers(server);
 
@@ -64,8 +67,7 @@ void User_Http_Server_Task(void)
     terminal_log_init();
     start_webserver();
 
-    while(1)
-    {
+    while (1) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

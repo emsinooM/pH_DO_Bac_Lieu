@@ -1,21 +1,24 @@
-#include "user_time.h"
-#include "driver/gptimer.h"
-#include "esp_log.h"
-#include "freertos/task.h"
-#include "freertos/event_groups.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include <time.h>
+
 #include "freertos/FreeRTOS.h"
-#include "user_ouput.h"
+#include "freertos/event_groups.h"
+#include "freertos/task.h"
 #include "driver/gpio.h"
-#include "time.h"
-#include "esp_sntp.h"
+#include "driver/gptimer.h"
+#include "esp_app_format.h"
+#include "esp_log.h"
 #include "esp_netif.h"
-#include "user_system.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
-#include "esp_app_format.h"
-#include "ds3231.h"
-
+#include "esp_sntp.h"
 #include "esp_wifi.h"
+
+#include "ds3231.h"
+#include "user_ouput.h"
+#include "user_system.h"
+#include "user_time.h"
 
 /* Khai báo các Task Handle từ main để theo dõi */
 extern TaskHandle_t Azure_Task_Handle;
@@ -74,7 +77,7 @@ static void time_sync_cb(struct timeval *tv)
     time_t now;
     struct tm timeInfo;
     time(&now);
-    
+
     // Thiết lập timezone cục bộ UTC-7
     setenv("TZ", "UTC-7", 1);
     tzset();
@@ -93,19 +96,15 @@ static void time_sync_cb(struct timeval *tv)
 
 static void prvPrintFwPartitionVersion(const esp_partition_t *part)
 {
-    if(part == NULL)
-    {
+    if (part == NULL) {
         ESP_LOGI(TIMER_TAG, "Partition: N/A");
         return;
     }
 
     esp_app_desc_t app_desc;
-    if(esp_ota_get_partition_description(part, &app_desc) == ESP_OK)
-    {
+    if (esp_ota_get_partition_description(part, &app_desc) == ESP_OK) {
         ESP_LOGI(TIMER_TAG, "Partition %s: Version %s", part->label, app_desc.version);
-    }
-    else
-    {
+    } else {
         ESP_LOGI(TIMER_TAG, "Partition %s: Version <unknown>", part->label);
     }
 }
@@ -113,19 +112,9 @@ static void prvPrintFwPartitionVersion(const esp_partition_t *part)
 static void User_Print_Firmware_Info(void)
 {
     const esp_partition_t *running = esp_ota_get_running_partition();
-    if(running != NULL)
-    {
+    if (running != NULL) {
         ESP_LOGI(TIMER_TAG, "Running partition: %s, Version: %s", running->label, VERSION);
-        // esp_app_desc_t app_desc;
-        // const char *ver = "<unknown>";
-        // if(esp_ota_get_partition_description(running, &app_desc) == ESP_OK)
-        // {
-        //     ver = app_desc.version;
-        // }
-        // ESP_LOGI(TIMER_TAG, "Running partition: %s, Version: %s", running->label, ver);
-    }
-    else
-    {
+    } else {
         ESP_LOGI(TIMER_TAG, "Running partition: <unknown>");
     }
 
@@ -146,8 +135,7 @@ static void User_Print_Firmware_Info(void)
 
 void User_Get_time(void)
 {
-    while(!Sys_Info.isWifiConnected)
-    {   
+    while (!Sys_Info.isWifiConnected) {
         ESP_LOGW(TIMER_TAG, "Wait for wifi connected");
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
@@ -156,11 +144,10 @@ void User_Get_time(void)
     char timeBuf[64];
 
     struct  tm timeInfo;
-    
+
     esp_sntp_setservername(0, "time.google.com");
     esp_sntp_setservername(1, "time1.google.com");
     esp_sntp_setservername(2, "time2.google.com");
-
 
     esp_sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
     esp_sntp_set_sync_interval(3600000);
@@ -169,8 +156,7 @@ void User_Get_time(void)
 
     esp_sntp_init();
 
-    while(!Sys_Info.isTimeSync)
-    {
+    while (!Sys_Info.isTimeSync) {
         ESP_LOGW(TIMER_TAG, "Wait time is synchronized ... ");
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
@@ -182,9 +168,7 @@ void User_Get_time(void)
     localtime_r(&now, &timeInfo);
     strftime(timeBuf, sizeof(timeBuf), "%c", &timeInfo);
     ESP_LOGI("TIME: ", "The current date/time is: %s", timeBuf);
-    
 }
-
 
 void User_Time_Task(void)
 {
@@ -194,48 +178,18 @@ void User_Time_Task(void)
 
     vTaskDelay(pdMS_TO_TICKS(10000));
 
-    uint32_t log_counter = 0;
-
-    while (1)
-    {
-        if(Sys_Info.isTimeSyncCb)
-        {
+    while (1) {
+        if (Sys_Info.isTimeSyncCb) {
             static uint8_t state = 0x01;
 
             state ^= 0x01;
 
             Sys_Info.isTimeSyncCb = false;
             time(&Sys_Info.epochtime);
-            // gpio_set_level(IO_LED_EXTBOARD_PIN, state);
         }
-
-    // if (++log_counter >= 10)
-    //     {
-    //         log_counter = 0;
-    //         ESP_LOGW("STACK_CHECK", "=== KHÔNG GIAN STACK CÒN TRỐNG (BYTES) ===");
-    //         if (Azure_Task_Handle != NULL) {
-    //             ESP_LOGI("STACK_CHECK", "Azure Master Task Free: %u bytes", 
-    //                      (unsigned)uxTaskGetStackHighWaterMark(Azure_Task_Handle));
-    //         }
-    //         if (Http_Server_Task_Handle != NULL) {
-    //             ESP_LOGI("STACK_CHECK", "HTTP Server Task Free: %u bytes", 
-    //                      (unsigned)uxTaskGetStackHighWaterMark(Http_Server_Task_Handle));
-    //         }
-    //         if (Timer_Task_Handle != NULL) {
-    //             ESP_LOGI("STACK_CHECK", "Timer Task Free:       %u bytes", 
-    //                      (unsigned)uxTaskGetStackHighWaterMark(Timer_Task_Handle));
-    //         }
-    //         if (OTA_Task_Handle != NULL) {
-    //             ESP_LOGI("STACK_CHECK", "OTA Task Free:         %u bytes", 
-    //                      (unsigned)uxTaskGetStackHighWaterMark(OTA_Task_Handle));
-    //         }
-    //         ESP_LOGW("STACK_CHECK", "========================================");
-    //     }
-
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
-    
 }
 
 

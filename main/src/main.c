@@ -1,9 +1,15 @@
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "nvs_flash.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#include <sys/time.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include "esp_log.h"
+#include "nvs_flash.h"
 
 #include "cs1237.h"
 #include "do_sensor.h"
@@ -14,13 +20,10 @@
 #include "user_azure.h"
 #include "user_fram.h"
 #include "user_http_server.h"
+#include "user_ota.h"
 #include "user_system.h"
 #include "user_time.h"
-#include "user_ota.h"
 #include "wifi_config_manager.h"
-#include <stdlib.h>
-#include <sys/time.h>
-#include <time.h>
 
 static const char *TAG = "PH_TEMP_SYSTEM";
 
@@ -32,7 +35,8 @@ TaskHandle_t Http_Server_Task_Handle = NULL;
 TaskHandle_t Timer_Task_Handle = NULL;
 TaskHandle_t OTA_Task_Handle = NULL;
 
-static void on_do_reading(const do_sensor_reading_t *reading, void *user_ctx) {
+static void on_do_reading(const do_sensor_reading_t *reading, void *user_ctx)
+{
   (void)user_ctx;
   if (!reading->valid) {
     ESP_LOGW("DO_SENSOR", "callback: loi code=%d", reading->error_code);
@@ -49,7 +53,8 @@ static void on_do_reading(const do_sensor_reading_t *reading, void *user_ctx) {
   }
 }
 
-static void ph_temp_sensor_task(void *pvParameters) {
+static void ph_temp_sensor_task(void *pvParameters)
+{
   ESP_LOGI(TAG, "ph_temp_sensor_task bat dau chay trên Core 1");
 
   // Đọc mẫu ban đầu để nạp sẵn giá trị cho bộ lọc trung vị (tránh lệch/trễ lúc khởi động)
@@ -219,7 +224,8 @@ static void ph_temp_sensor_task(void *pvParameters) {
   }
 }
 
-static void system_startup_task(void *pvParameters) {
+static void system_startup_task(void *pvParameters)
+{
   // --- Khởi tạo Wifi Manager ---
   wifi_config_manager_init();
 
@@ -267,7 +273,8 @@ static void system_startup_task(void *pvParameters) {
   vTaskDelete(NULL);
 }
 
-void app_main(void) {
+void app_main(void)
+{
   init_system_gpios();
 
   /* Fix mui gio ngay tu dau (UTC+7 = "UTC-7" theo POSIX), khong phu thuoc RTC.

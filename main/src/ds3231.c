@@ -1,6 +1,7 @@
-#include "ds3231.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
+
+#include "ds3231.h"
 
 #define I2C_MASTER_NUM             I2C_NUM_0
 #define I2C_MASTER_FREQ_HZ         100000     // 100kHz
@@ -8,15 +9,18 @@
 static const char *TAG = "DS3231";
 static i2c_master_dev_handle_t ds3231_dev_handle = NULL;
 
-static uint8_t dec_to_bcd(uint8_t val) {
+static uint8_t dec_to_bcd(uint8_t val)
+{
     return ((val / 10) << 4) + (val % 10);
 }
 
-static uint8_t bcd_to_dec(uint8_t val) {
+static uint8_t bcd_to_dec(uint8_t val)
+{
     return ((val >> 4) * 10) + (val & 0x0F);
 }
 
-esp_err_t ds3231_init(gpio_num_t sda_pin, gpio_num_t scl_pin) {
+esp_err_t ds3231_init(gpio_num_t sda_pin, gpio_num_t scl_pin)
+{
     if (ds3231_dev_handle != NULL) {
         ESP_LOGI(TAG, "DS3231 already initialized");
         return ESP_OK;
@@ -54,13 +58,18 @@ esp_err_t ds3231_init(gpio_num_t sda_pin, gpio_num_t scl_pin) {
     return ESP_OK;
 }
 
-esp_err_t ds3231_get_time(struct tm *timeinfo) {
-    if (timeinfo == NULL) return ESP_ERR_INVALID_ARG;
-    if (ds3231_dev_handle == NULL) return ESP_ERR_INVALID_STATE;
+esp_err_t ds3231_get_time(struct tm *timeinfo)
+{
+    if (timeinfo == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (ds3231_dev_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     uint8_t data[7];
     uint8_t reg = DS3231_REG_TIME;
-    
+
     // Read 7 bytes starting from register 0x00 (seconds)
     esp_err_t err = i2c_master_transmit_receive(ds3231_dev_handle, &reg, 1, data, 7, 1000);
     if (err != ESP_OK) {
@@ -70,7 +79,7 @@ esp_err_t ds3231_get_time(struct tm *timeinfo) {
 
     timeinfo->tm_sec = bcd_to_dec(data[0] & 0x7F);
     timeinfo->tm_min = bcd_to_dec(data[1] & 0x7F);
-    
+
     // Hour register: bit 6 is 12/24h mode.
     // If bit 6 is 0, it's 24-hour mode.
     // If bit 6 is 1, it's 12-hour mode.
@@ -78,9 +87,13 @@ esp_err_t ds3231_get_time(struct tm *timeinfo) {
         // 12-hour mode
         uint8_t hour = bcd_to_dec(data[2] & 0x1F);
         if (data[2] & 0x20) { // PM flag
-            if (hour < 12) hour += 12;
+            if (hour < 12) {
+                hour += 12;
+            }
         } else { // AM flag
-            if (hour == 12) hour = 0;
+            if (hour == 12) {
+                hour = 0;
+            }
         }
         timeinfo->tm_hour = hour;
     } else {
@@ -96,9 +109,14 @@ esp_err_t ds3231_get_time(struct tm *timeinfo) {
     return ESP_OK;
 }
 
-esp_err_t ds3231_set_time(const struct tm *timeinfo) {
-    if (timeinfo == NULL) return ESP_ERR_INVALID_ARG;
-    if (ds3231_dev_handle == NULL) return ESP_ERR_INVALID_STATE;
+esp_err_t ds3231_set_time(const struct tm *timeinfo)
+{
+    if (timeinfo == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (ds3231_dev_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     uint8_t data[8];
     data[0] = DS3231_REG_TIME; // Start register address
@@ -120,9 +138,14 @@ esp_err_t ds3231_set_time(const struct tm *timeinfo) {
     return ds3231_clear_oscillator_flag();
 }
 
-esp_err_t ds3231_check_oscillator(bool *stopped) {
-    if (stopped == NULL) return ESP_ERR_INVALID_ARG;
-    if (ds3231_dev_handle == NULL) return ESP_ERR_INVALID_STATE;
+esp_err_t ds3231_check_oscillator(bool *stopped)
+{
+    if (stopped == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (ds3231_dev_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     uint8_t reg = DS3231_REG_STATUS;
     uint8_t val = 0;
@@ -136,12 +159,15 @@ esp_err_t ds3231_check_oscillator(bool *stopped) {
     return ESP_OK;
 }
 
-esp_err_t ds3231_clear_oscillator_flag(void) {
-    if (ds3231_dev_handle == NULL) return ESP_ERR_INVALID_STATE;
+esp_err_t ds3231_clear_oscillator_flag(void)
+{
+    if (ds3231_dev_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     uint8_t reg = DS3231_REG_STATUS;
     uint8_t val = 0;
-    
+
     // Read status register
     esp_err_t err = i2c_master_transmit_receive(ds3231_dev_handle, &reg, 1, &val, 1, 1000);
     if (err != ESP_OK) {
@@ -152,7 +178,7 @@ esp_err_t ds3231_clear_oscillator_flag(void) {
     // Clear OSF (bit 7)
     val &= ~DS3231_STATUS_OSF;
     uint8_t data[2] = { DS3231_REG_STATUS, val };
-    
+
     err = i2c_master_transmit(ds3231_dev_handle, data, 2, 1000);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Clear OSF failed: %s", esp_err_to_name(err));

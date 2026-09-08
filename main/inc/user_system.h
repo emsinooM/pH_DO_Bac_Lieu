@@ -1,10 +1,12 @@
 #pragma once
 
-#include "stdint.h"
-#include "stdbool.h"
-#include "time.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include <time.h>
 
-// #define CRC32_BYPASS        1
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define START_OF_FRAME 0x02
 #define END_OF_FRAME    0x03
@@ -14,17 +16,16 @@
 #define SYS_WIFI_SSID_DEFAULT   "Mebieco 2.4G"
 #define SYS_WIFI_PASS_DEFAULT   "68686868@"
 
-
 #define SYS_IOT_HUB_HOST_NAME_DEFAULT           "dev-iot-hub-1.azure-devices.net"
 #define SYS_IOT_HUB_DEVICE_ID_DEFAULT           "test-devices-6"
 #define SYS_IOT_HUB_SYMMETRIC_KEY_DEFAULT       "S7cpXyl9xfxLNUBMR4D36aKJhlf1IQVoFk8swv62fKI="
 
-/* Define for FRAM */
+// Define for FRAM
 #define DEVICE_CONFIG_START_ADDRESS 0x1000
 #define DEVICE_SPACE_LEN_IN_FRAM    512
 #define NUM_OF_DEVICE               4
 
-/* Define cmd code */
+// Define cmd code
 #define CMD_CODE_UPDATE_FIRMWARE            501
 #define CMD_CODE_ASK_VERSION                502
 #define CMD_CODE_GET_PH                     503
@@ -35,34 +36,28 @@
 #define CMD_CODE_GET_FULL_TELEMETRY         508
 #define CMD_CODE_OFFLINE_TELEMETRY_SYNC     510
 
-
-
-
 #define VERSION "2.0.2"
 
-
-/* Define Telemetry queue length */
+// Define Telemetry queue length
 #define TELEMETRY_QUEUE_LENGTH  10
 
-typedef struct 
-{
-    /* data */
+typedef struct {
     bool isWifiConnected;
     bool isTimeSync;
 
     bool isTimeSyncCb;
     time_t epochtime;
-}Sys_Info_Handle_t;
+} Sys_Info_Handle_t;
 
 extern Sys_Info_Handle_t Sys_Info;
 extern uint32_t reset_count;
 
 void User_System_Get_Config(void);
-
 void User_System_Init(void);
-
 bool Is_System_Time_Synchronized(void);
-
 bool Is_System_Internet_Connected(void);
-
 void User_System_Clear_Reset_Count(void);
+
+#ifdef __cplusplus
+}
+#endif

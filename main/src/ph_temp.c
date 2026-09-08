@@ -1,11 +1,14 @@
-#include "ph_temp.h"
 #include <math.h>
 #include <string.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_flash.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
+
+#include "ph_temp.h"
 #include "user_storage.h"
 
 static const char *TAG = "PH_TEMP_ALGO";
@@ -17,17 +20,6 @@ float g_temp_offset = 0.0f;
 
 // Đối tượng hiệu chuẩn toàn cục dùng chung cho hệ thống
 PhCalibration_t ph_cal = {
-    // --- GIÁ TRỊ GỐC MẶC ĐỊNH (Bảng hiệu chuẩn ban đầu) ---
-    // .ph7_voltage_mv = 4.77f,
-    // .ph7_temp_c = 25.0f,
-    // .ph4_voltage_mv = 175.53f,
-    // .ph4_temp_c = 25.0f,
-    // .slope_norm = -5.238f,
-    // .slope_high = -5.238f,
-    // .u7 = 0.016f,
-    // .is_calibrated = false,
-
-    // --- BỘ THÔNG SỐ FAKE THỬ NGHIỆM GIẢ LẬP ---
     .ph7_voltage_mv = 1.63f,
     .ph7_temp_c = 30.97f,
     .ph4_voltage_mv = 176.80f,
@@ -45,7 +37,8 @@ PhCalibration_t ph_cal = {
 // Cấu trúc trạng thái cảm biến toàn cục
 static PH_Temp_Sensor_Status_t s_sensor_status = {0};
 
-void update_ph_calibration(PhCalibration_t *cal) {
+void update_ph_calibration(PhCalibration_t *cal)
+{
     float t7_k = cal->ph7_temp_c + 273.15f;
     float t4_k = cal->ph4_temp_c + 273.15f;
 
@@ -55,15 +48,15 @@ void update_ph_calibration(PhCalibration_t *cal) {
     if (cal->cal_type == 3) {
         float t10_k = cal->ph10_temp_c + 273.15f;
         float u10 = cal->ph10_voltage_mv / t10_k;
-        
+
         float mid_target = (cal->ph10_target < 9.5f) ? 6.86f : 7.00f;
-        
+
         float du_low = fabsf(cal->u7 - u4);
         float du_high = fabsf(cal->u7 - u10);
 
         bool low_ok = du_low > 0.1f;
         bool high_ok = du_high > 0.1f;
-        
+
         if (low_ok && high_ok) {
             cal->slope_norm = (mid_target - 4.00f) / (cal->u7 - u4);
             cal->slope_high = (cal->ph10_target - mid_target) / (u10 - cal->u7);
@@ -115,7 +108,8 @@ void update_ph_calibration(PhCalibration_t *cal) {
     }
 }
 
-float calculate_temperature(int32_t raw_adc, bool is_pt1000) {
+float calculate_temperature(int32_t raw_adc, bool is_pt1000)
+{
     float v_diff = ((float)raw_adc * V_REF_ADC) / ADC_DIVISOR;
 
     // Phòng ngừa lỗi chia cho 0 hoặc giá trị quá nhỏ
@@ -125,39 +119,48 @@ float calculate_temperature(int32_t raw_adc, bool is_pt1000) {
 
     if (is_pt1000) {
         float ratio = V_REF_BRIDGE  / v_diff;
-        if (ratio < 1.0f) ratio = 1.0f; // Tránh điện trở âm bất thường
+        if (ratio < 1.0f) {
+            ratio = 1.0f; // Tránh điện trở âm bất thường
+        }
         float r_pt1000 = R_CALIB * (ratio - 1.0f);
         return (r_pt1000 - 1000.0f) / 3.9083f;
     } else {
         float v_ntc = V_REF_BRIDGE  + v_diff;
-        if (v_ntc <= 0.0f) v_ntc = 1e-6f;
-        
+        if (v_ntc <= 0.0f) {
+            v_ntc = 1e-6f;
+        }
+
         float ratio = V_REF_BRIDGE  / v_ntc;
-        if (ratio <= 1.0001f) ratio = 1.0001f; // Tránh lấy log của số âm hoặc bằng 0
-        
+        if (ratio <= 1.0001f) {
+            ratio = 1.0001f; // Tránh lấy log của số âm hoặc bằng 0
+        }
+
         float r_ntc = 750.0f / (ratio - 1.0f);
-        float steinhart = r_ntc / NTC_NOMINAL_RESISTANCE;           
-        steinhart = logf(steinhart);            
-        steinhart /= NTC_BETA;                   
-        steinhart += 1.0f / (NTC_T0_KELVIN);    
-        steinhart = 1.0f / steinhart;           
-        steinhart -= 273.15f;                   
+        float steinhart = r_ntc / NTC_NOMINAL_RESISTANCE;
+        steinhart = logf(steinhart);
+        steinhart /= NTC_BETA;
+        steinhart += 1.0f / (NTC_T0_KELVIN);
+        steinhart = 1.0f / steinhart;
+        steinhart -= 273.15f;
         return steinhart;
     }
 }
 
-float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, float temp_c, float *out_v_probe_mv, bool *out_ph_valid) {
+float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, float temp_c, float *out_v_probe_mv, bool *out_ph_valid)
+{
     float v_diff = ((float)raw_adc * V_REF_ADC) / ADC_DIVISOR;
     float v_probe =  v_diff * 2.0f; // Giải mã điện áp đầu dò thực tế (Khử offset và bù hệ số suy hao 0.5 của Op-Amp)
 
     float v_probe_mv = v_probe * 1000.0f;
-    
+
     if (out_v_probe_mv) {
         *out_v_probe_mv = v_probe_mv;
     }
 
     // Đề phòng lỗi đo nhiệt độ bất thường
-    if (temp_c < -40.0f || temp_c > 150.0f) temp_c = 25.0f; 
+    if (temp_c < -40.0f || temp_c > 150.0f) {
+        temp_c = 25.0f;
+    }
 
     float ph_val;
 
@@ -172,7 +175,7 @@ float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, fl
     } else {
         float temp_k = temp_c + 273.15f;
         float u_probe = v_probe_mv / temp_k;
-        
+
         if (cal->cal_type == 3) {
             float mid_target = (cal->ph10_target < 9.5f) ? 6.86f : 7.00f;
             if (u_probe > cal->u7) { // pH <= mid_target (Axit)
@@ -201,8 +204,12 @@ float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, fl
     }
 
     // Giới hạn dải đo bảo vệ hiển thị ngoài thực tế
-    if (ph_val < 0.0f) ph_val = 0.0f;
-    if (ph_val > 14.0f) ph_val = 14.0f;
+    if (ph_val < 0.0f) {
+        ph_val = 0.0f;
+    }
+    if (ph_val > 14.0f) {
+        ph_val = 14.0f;
+    }
 
     return ph_val;
 }
@@ -211,17 +218,20 @@ float calculate_ph_with_atc_calibrated(PhCalibration_t *cal, int32_t raw_adc, fl
 
 static SemaphoreHandle_t s_sensor_status_mutex = NULL;
 
-void ph_temp_init(void) {
+void ph_temp_init(void)
+{
     if (s_sensor_status_mutex == NULL) {
         s_sensor_status_mutex = xSemaphoreCreateMutex();
     }
 }
 
-static void init_sensor_status_mutex_if_needed(void) {
+static void init_sensor_status_mutex_if_needed(void)
+{
     ph_temp_init();
 }
 
-PH_Temp_Sensor_Status_t Get_Sensor_Status(void) {
+PH_Temp_Sensor_Status_t Get_Sensor_Status(void)
+{
     init_sensor_status_mutex_if_needed();
     PH_Temp_Sensor_Status_t status;
     if (xSemaphoreTake(s_sensor_status_mutex, portMAX_DELAY) == pdTRUE) {
@@ -233,7 +243,8 @@ PH_Temp_Sensor_Status_t Get_Sensor_Status(void) {
     return status;
 }
 
-void Update_Sensor_Measurements(float ph, bool ph_valid, float temp, bool temp_valid, float v_probe_mv) {
+void Update_Sensor_Measurements(float ph, bool ph_valid, float temp, bool temp_valid, float v_probe_mv)
+{
     init_sensor_status_mutex_if_needed();
     if (xSemaphoreTake(s_sensor_status_mutex, portMAX_DELAY) == pdTRUE) {
         s_sensor_status.ph = ph;
@@ -241,7 +252,7 @@ void Update_Sensor_Measurements(float ph, bool ph_valid, float temp, bool temp_v
         s_sensor_status.temperature = temp;
         s_sensor_status.temp_valid = temp_valid;
         s_sensor_status.v_probe_mv = v_probe_mv;
-        
+
         // Đồng bộ các tham số hiệu chuẩn hiện tại
         s_sensor_status.is_calibrated = ph_cal.is_calibrated;
         s_sensor_status.ph7_voltage_mv = ph_cal.ph7_voltage_mv;
@@ -250,12 +261,13 @@ void Update_Sensor_Measurements(float ph, bool ph_valid, float temp, bool temp_v
         s_sensor_status.ph4_temp_c = ph_cal.ph4_temp_c;
         s_sensor_status.slope_norm = ph_cal.slope_norm;
         s_sensor_status.u7 = ph_cal.u7;
-        
+
         xSemaphoreGive(s_sensor_status_mutex);
     }
 }
 
-void Update_DO_Sensor_Measurements(float do_mg_l, float do_temp_c, float do_saturation_pct, bool do_valid, int do_error_code) {
+void Update_DO_Sensor_Measurements(float do_mg_l, float do_temp_c, float do_saturation_pct, bool do_valid, int do_error_code)
+{
     init_sensor_status_mutex_if_needed();
     if (xSemaphoreTake(s_sensor_status_mutex, portMAX_DELAY) == pdTRUE) {
         s_sensor_status.do_mg_l = do_mg_l;
@@ -267,7 +279,8 @@ void Update_DO_Sensor_Measurements(float do_mg_l, float do_temp_c, float do_satu
     }
 }
 
-bool Save_Calibration_To_Storage(const PhCalibration_t *cal) {
+bool Save_Calibration_To_Storage(const PhCalibration_t *cal)
+{
     nvs_handle_t handle;
     esp_err_t err = nvs_open("sys_cfg", NVS_READWRITE, &handle);
     if (err != ESP_OK) {
@@ -287,7 +300,8 @@ bool Save_Calibration_To_Storage(const PhCalibration_t *cal) {
     return true;
 }
 
-bool Load_Temp_Settings_From_Storage(void) {
+bool Load_Temp_Settings_From_Storage(void)
+{
     uint32_t val = 0;
     if (Nvs_Read_Number("temp_mode", &val)) {
         g_temp_mode = (val < TEMP_MODE_COUNT) ? (temp_mode_t)val : TEMP_MODE_ATC_C;
@@ -323,7 +337,8 @@ bool Load_Temp_Settings_From_Storage(void) {
     return true;
 }
 
-bool Save_Temp_Settings_To_Storage(void) {
+bool Save_Temp_Settings_To_Storage(void)
+{
     bool ok = true;
     ok &= Nvs_Write_Number("temp_mode", (uint32_t)g_temp_mode);
     ok &= Nvs_Write_Number("manual_temp", (uint32_t)(g_manual_temp * 10.0f));
@@ -338,7 +353,8 @@ bool Save_Temp_Settings_To_Storage(void) {
     return ok;
 }
 
-bool Load_Calibration_From_Storage(void) {
+bool Load_Calibration_From_Storage(void)
+{
     ph_temp_init();
     Load_Temp_Settings_From_Storage();
     nvs_handle_t handle;
@@ -393,13 +409,14 @@ bool Load_Calibration_From_Storage(void) {
     return true;
 }
 
-bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_c, uint8_t cal_type) {
-    ESP_LOGI(TAG, "Yêu cầu hiệu chuẩn pH %.2f: raw mV=%.2f, Temp=%.2f C, cal_type=%d", 
+bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_c, uint8_t cal_type)
+{
+    ESP_LOGI(TAG, "Yêu cầu hiệu chuẩn pH %.2f: raw mV=%.2f, Temp=%.2f C, cal_type=%d",
              target_ph, current_v_mv, current_temp_c, cal_type);
-             
+
     PhCalibration_t temp_cal = ph_cal;
     temp_cal.cal_type = cal_type;
-    
+
     if (fabsf(target_ph - 4.00f) < 0.1f) {
         if (current_v_mv < 120.0f || current_v_mv > 240.0f) {
             ESP_LOGE(TAG, "Hiệu chuẩn pH 4.00 thất bại: Điện áp %.2f mV ngoài dải hợp lệ [+120mV, +240mV]!", current_v_mv);
@@ -426,23 +443,24 @@ bool Calibrate_PH_Point(float target_ph, float current_v_mv, float current_temp_
         ESP_LOGE(TAG, "Hiệu chuẩn thất bại: Mốc pH %.2f không hỗ trợ!", target_ph);
         return false;
     }
-    
+
     update_ph_calibration(&temp_cal);
 
     if (!temp_cal.is_calibrated) {
         ESP_LOGE(TAG, "Hiệu chuẩn pH thất bại: Độ dốc Slope không đạt yêu cầu sức khỏe điện cực (80%% - 110%%)!");
         return false;
     }
-    
+
     ph_cal = temp_cal;
     Save_Calibration_To_Storage(&ph_cal);
     Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.ph_valid, s_sensor_status.temperature, s_sensor_status.temp_valid, s_sensor_status.v_probe_mv);
     return true;
 }
 
-bool Reset_PH_Calibration(void) {
+bool Reset_PH_Calibration(void)
+{
     ESP_LOGI(TAG, "Yêu cầu khôi phục cài đặt gốc hiệu chuẩn pH...");
-    
+
     // --- Giá trị cũ gốc: ph7_mV=4.77f, ph7_temp=25.0f, ph4_mV=175.53f, ph4_temp=25.0f, is_calibrated=false ---
     ph_cal.ph7_voltage_mv = 1.63f;  // Gốc: 4.77f
     ph_cal.ph7_temp_c = 30.97f;    // Gốc: 25.0f
@@ -452,16 +470,16 @@ bool Reset_PH_Calibration(void) {
     ph_cal.ph10_temp_c = 25.0f;
     ph_cal.ph10_target = 10.00f;
     ph_cal.cal_type = 2;
-    
+
     update_ph_calibration(&ph_cal);
-    // ph_cal.is_calibrated = false; // Gốc: Buộc về false khi chưa hiệu chuẩn
-    
+
     bool ok = Save_Calibration_To_Storage(&ph_cal);
     Update_Sensor_Measurements(s_sensor_status.ph, s_sensor_status.ph_valid, s_sensor_status.temperature, s_sensor_status.temp_valid, s_sensor_status.v_probe_mv);
     return ok;
 }
 
-PhSensorHealth_t Get_PH_Sensor_Health(void) {
+PhSensorHealth_t Get_PH_Sensor_Health(void)
+{
     PhSensorHealth_t health;
     memset(&health, 0, sizeof(health));
 

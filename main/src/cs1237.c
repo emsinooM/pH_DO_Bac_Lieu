@@ -1,17 +1,23 @@
-#include "cs1237.h"
-#include "esp_log.h"
-#include "esp_rom_gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+#include "esp_log.h"
+#include "esp_rom_gpio.h"
+
+#include "cs1237.h"
 
 static const char *TAG = "CS1237_DRIVER";
 
 // Spinlock để bảo vệ các đoạn code bit-banging khỏi ngắt của FreeRTOS
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-static inline void delay_us(uint32_t us) { esp_rom_delay_us(us); }
+static inline void delay_us(uint32_t us)
+{
+  esp_rom_delay_us(us);
+}
 
-void init_system_gpios(void) {
+void init_system_gpios(void)
+{
   // Reset only the temperature pins to disconnect from USB Serial JTAG or other
   // functions
   gpio_reset_pin(TEMP_SCLK_PIN);
@@ -29,7 +35,6 @@ void init_system_gpios(void) {
   gpio_set_level(TEMP_SCLK_PIN, 0);
 
   io_conf.pin_bit_mask = (1ULL << TEMP_DATA_PIN);
-  // io_conf.mode = GPIO_MODE_INPUT_OUTPUT_OD;
   io_conf.mode = GPIO_MODE_INPUT;
   io_conf.pull_up_en = 1;
   io_conf.pull_down_en = 0;
@@ -60,8 +65,8 @@ void init_system_gpios(void) {
 }
 
 void write_cs1237_config(gpio_num_t sclk_pin, gpio_num_t data_pin,
-uint8_t config_val) {
-  // gpio_set_level(data_pin, 1);
+uint8_t config_val)
+{
   int timeout = 10000;
   while (gpio_get_level(data_pin) == 1) {
     delay_us(50);
@@ -130,7 +135,8 @@ uint8_t config_val) {
   portEXIT_CRITICAL(&mux);
 }
 
-bool read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin, int32_t *out_raw) {
+bool read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin, int32_t *out_raw)
+{
   uint32_t data = 0;
   int timeout = 10000;
 
@@ -160,23 +166,14 @@ bool read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin, int32_t *out_raw)
     delay_us(10);
   }
 
-  // int update_flag = -1;
   for (int i = 0; i < 3; i++) {
     gpio_set_level(sclk_pin, 1);
     delay_us(10);
     gpio_set_level(sclk_pin, 0);
     delay_us(10);
-
-    // if (i == 0) {
-    //     update_flag = gpio_get_level(data_pin);
-    // }
   }
 
   portEXIT_CRITICAL(&mux);
-
-  // if (update_flag != -1) {
-  //     ESP_LOGI("CS1237_DEBUG", "Cờ Update (Xung 25): %d", update_flag);
-  // }
 
   int32_t raw_signed;
   if (data & 0x00800000) {
@@ -192,7 +189,8 @@ bool read_cs1237_raw(gpio_num_t sclk_pin, gpio_num_t data_pin, int32_t *out_raw)
   return true;
 }
 
-uint8_t read_cs1237_config(gpio_num_t sclk_pin, gpio_num_t data_pin) {
+uint8_t read_cs1237_config(gpio_num_t sclk_pin, gpio_num_t data_pin)
+{
   uint8_t config_read = 0;
   int timeout = 10000;
 
@@ -200,8 +198,9 @@ uint8_t read_cs1237_config(gpio_num_t sclk_pin, gpio_num_t data_pin) {
   gpio_set_level(data_pin, 1);
   while (gpio_get_level(data_pin) == 1) {
     delay_us(50);
-    if (--timeout <= 0)
+    if (--timeout <= 0) {
       return 0xFF; // Lỗi timeout
+    }
   }
 
   portENTER_CRITICAL(&mux);

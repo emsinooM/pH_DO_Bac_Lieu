@@ -1,21 +1,25 @@
-#include "user_fram.h"
-#include "driver/spi_master.h"
-#include "driver/gpio.h"
-#include "esp_log.h"
-#include "string.h"
-#include "user_ouput.h"
-#include "user_azure.h"
-#include "user_system.h"
-#include "ph_temp.h"
-#include "time.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include <time.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "driver/gpio.h"
+#include "driver/spi_master.h"
+#include "esp_log.h"
+
+#include "ph_temp.h"
+#include "user_azure.h"
+#include "user_fram.h"
+#include "user_ouput.h"
+#include "user_system.h"
 
 #define MAX_DEVICE          10
 #define DEVICE_NAME_LEN     16
 #define FRAM_START   0x0000
-#define FRAM_LOCK()    do { if (s_fram_mutex) xSemaphoreTakeRecursive(s_fram_mutex, portMAX_DELAY); } while(0)
-#define FRAM_UNLOCK()  do { if (s_fram_mutex) xSemaphoreGiveRecursive(s_fram_mutex); } while(0)
+#define FRAM_LOCK()    do { if (s_fram_mutex) { xSemaphoreTakeRecursive(s_fram_mutex, portMAX_DELAY); } } while (0)
+#define FRAM_UNLOCK()  do { if (s_fram_mutex) { xSemaphoreGiveRecursive(s_fram_mutex); } } while (0)
 
 static bool s_fram_initialized = false;
 static SemaphoreHandle_t s_fram_mutex = NULL;
@@ -29,83 +33,48 @@ uint8_t  cs_pin = 0;
 
 void spi_post_transfer_callback(spi_transaction_t *t)
 {
-    uint8_t cs=*((uint8_t*)t->user);
+    uint8_t cs = *((uint8_t *)t->user);
     gpio_set_level(cs, 1);
-    // ESP_LOGI("SPI", "Cs active");
 }
 
 void spi_pre_transfer_callback(spi_transaction_t *t)
 {
-    uint8_t cs=*((uint8_t*)t->user);
+    uint8_t cs = *((uint8_t *)t->user);
     gpio_set_level(cs, 0);
-    // ESP_LOGI("SPI", "Cs deactive");
 }
 
-
-static bool spi_master_init() 
+static bool spi_master_init(void)
 {
-
-    // cs_pin = PIN_NUM_CS;
-    // gpio_reset_pin(PIN_NUM_CS);         //configures the IOMUX for this pin to the GPIO function
-
-    // gpio_set_pull_mode(PIN_NUM_CS, GPIO_PULLUP_ONLY);
-    // gpio_set_direction(PIN_NUM_CS, GPIO_MODE_OUTPUT);
-    // gpio_set_level(PIN_NUM_CS, 1);
-
-
     esp_err_t ret;
+
+    // Cấu hình các chân tín hiệu của SPI BUS
     spi_bus_config_t buscfg = {
-        .miso_io_num = PIN_NUM_MISO,
-        .mosi_io_num = PIN_NUM_MOSI,
-        .sclk_io_num = PIN_NUM_CLK,
-        .quadwp_io_num = -1, // Không dùng QuadWP
-        .quadhd_io_num = -1, // Không dùng QuadHD
-        .max_transfer_sz = 1024 // Kích thước truyền tối đa
+        .miso_io_num = PIN_NUM_MISO, // Chân SDI (MISO)
+        .mosi_io_num = PIN_NUM_MOSI, // Chân SDO (MOSI)
+        .sclk_io_num = PIN_NUM_CLK,  // Chân SCK (Clock)
+        .quadwp_io_num = -1,         // Không dùng Quad SPI WP
+        .quadhd_io_num = -1,         // Không dùng Quad SPI HD
+        .max_transfer_sz = 64,       // Kích thước truyền tối đa 64 byte
     };
 
+    // Cấu hình thiết bị SPI Slave (FRAM)
     spi_device_interface_config_t devcfg = {
-        .command_bits = 0,           // Opcodes là 8 bit
-        .address_bits = 0,          // Địa chỉ là 16 bit
-        .dummy_bits = 0,
-        .mode = 0,                   // SPI Mode 0
-        .duty_cycle_pos = 0,
-        .cs_ena_pretrans = 0,
-        .cs_ena_posttrans = 0,
-        .clock_speed_hz = 1000000,  // Tốc độ 10 MHz
-        .spics_io_num = PIN_NUM_CS,  // Chân CS
+        .clock_speed_hz = 10 * 1000 * 1000, // Tần số xung nhịp 10MHz (FRAM hỗ trợ lên đến 20MHz/40MHz)
+        .mode = 0,                          // Chế độ SPI Mode 0 (CPOL=0, CPHA=0)
+        .spics_io_num = PIN_NUM_CS,         // Chân CS chọn chip tự động điều khiển bởi phần cứng SPI Driver
         .queue_size = 7,             // Kích thước hàng đợi giao dịch
-        // .pre_cb = spi_pre_transfer_callback,
-        // .post_cb = spi_post_transfer_callback,
     };
 
 
-    // gpio_set_pull_mode(PIN_NUM_MISO, GPIO_PULLUP_ONLY);
-    // gpio_set_pull_mode(PIN_NUM_MOSI, GPIO_PULLUP_ONLY);
-    // gpio_set_pull_mode(PIN_NUM_CLK, GPIO_PULLUP_ONLY);
-
-
-
-    // PIN_NUM_WP is tied to 3V3 by hardware default
-
-    // // Khởi tạo BUS SPI
-    // ret = spi_bus_initialize(SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
-    // ESP_ERROR_CHECK(ret);
-    // // Thêm thiết bị F-RAM vào BUS
-    // ret = spi_bus_add_device(SPI_HOST, &devcfg, &spiFram);
-    // ESP_ERROR_CHECK(ret);
-    // ESP_LOGI(FRAM_TAG, "SPI Master initialized successfully.");
-
-     // Khởi tạo BUS SPI (Không dùng DMA - SPI_DMA_DISABLED để an toàn 100% với biến Stack và truyền FIFO nhanh nhất)
+    // Khởi tạo BUS SPI (Không dùng DMA - SPI_DMA_DISABLED để an toàn 100% với biến Stack và truyền FIFO nhanh nhất)
     ret = spi_bus_initialize(SPI_HOST, &buscfg, SPI_DMA_DISABLED);
-    if((ret != ESP_OK) && (ret != ESP_ERR_INVALID_STATE))
-    {
+    if ((ret != ESP_OK) && (ret != ESP_ERR_INVALID_STATE)) {
         ESP_LOGE(FRAM_TAG, "spi_bus_initialize failed: %s", esp_err_to_name(ret));
         return false;
     }
     // Thêm thiết bị F-RAM vào BUS
     ret = spi_bus_add_device(SPI_HOST, &devcfg, &spiFram);
-    if(ret != ESP_OK)
-    {
+    if (ret != ESP_OK) {
         ESP_LOGE(FRAM_TAG, "spi_bus_add_device failed: %s", esp_err_to_name(ret));
         return false;
     }
@@ -124,8 +93,7 @@ bool Fram_Init(void)
         }
     }
 
-    if(s_fram_initialized)
-    {
+    if (s_fram_initialized) {
         return true;
     }
 
@@ -134,8 +102,7 @@ bool Fram_Init(void)
 
 void FRAM_Delete_All(void)
 {
-    if(!Fram_Init())
-    {
+    if (!Fram_Init()) {
         ESP_LOGE(FRAM_TAG, "FRAM init failed, cannot clear");
         return;
     }
@@ -143,12 +110,10 @@ void FRAM_Delete_All(void)
     uint8_t buffer[256];
     memset(buffer, 0, sizeof(buffer));
 
-    for(int dev = 0; dev < 10; dev++)
-    {
+    for (int dev = 0; dev < 10; dev++) {
         uint16_t addr = dev * FRAM_DEVICE_SIZE;
 
-        for(uint16_t offset = 0; offset < FRAM_DEVICE_SIZE; offset += sizeof(buffer))
-        {
+        for (uint16_t offset = 0; offset < FRAM_DEVICE_SIZE; offset += sizeof(buffer)) {
             uint16_t chunk = (FRAM_DEVICE_SIZE - offset) < sizeof(buffer)
                                  ? (FRAM_DEVICE_SIZE - offset)
                                  : (uint16_t)sizeof(buffer);
@@ -180,16 +145,18 @@ void User_Spi_Transmit(uint8_t *data, uint16_t size, uint8_t *cs)
     gpio_set_level(PIN_NUM_CS, 1);
 }
 
-void Fram_Write_Data(uint16_t address, uint8_t *data, uint16_t size) 
+void Fram_Write_Data(uint16_t address, uint8_t *data, uint16_t size)
 {
-    if (!Fram_Init() || data == NULL || size == 0) return;
+    if (!Fram_Init() || data == NULL || size == 0) {
+        return;
+    }
     FRAM_LOCK();
 
     spi_transaction_t trans;
     memset(&trans, 0, sizeof(trans));
 
     Fram_Write_Enable();
-    
+
     uint16_t size_to_send = size + 3;
     uint8_t stack_buf[32];
     uint8_t *temp = stack_buf;
@@ -214,7 +181,7 @@ void Fram_Write_Data(uint16_t address, uint8_t *data, uint16_t size)
     trans.addr = 0;
     trans.length = size_to_send * 8;
     trans.tx_buffer = temp;
-    
+
     spi_device_transmit(spiFram, &trans);
 
     if (heap_used) {
@@ -240,10 +207,11 @@ void Fram_Write_Enable(void)
     spi_device_transmit(spiFram, &trans);
 }
 
-
-bool Fram_Read_Data(uint16_t address, uint8_t *data, uint16_t size) 
+bool Fram_Read_Data(uint16_t address, uint8_t *data, uint16_t size)
 {
-    if (!Fram_Init() || data == NULL || size == 0) return false;
+    if (!Fram_Init() || data == NULL || size == 0) {
+        return false;
+    }
     FRAM_LOCK();
 
     esp_err_t ret;
@@ -268,27 +236,31 @@ bool Fram_Read_Data(uint16_t address, uint8_t *data, uint16_t size)
     }
 
     uint8_t command[3] = {0};
-    command[0] = OPCODE_READ;         
-    command[1] = (address >> 8) & 0xFF;    
-    command[2] = address & 0xFF;          
+    command[0] = OPCODE_READ;
+    command[1] = (address >> 8) & 0xFF;
+    command[2] = address & 0xFF;
 
     trans.cmd = 0;
     trans.addr = 0;
-    trans.length = total_size * 8;       
+    trans.length = total_size * 8;
     trans.tx_buffer = command;
     trans.rx_buffer = temp;
     trans.rxlength = total_size * 8;
-    
+
     ret = spi_device_polling_transmit(spiFram, &trans);
     if (ret != ESP_OK) {
         ESP_LOGE("FRAM READ", "SPI polling transmit fail: %s", esp_err_to_name(ret));
-        if (heap_used) free(temp);
+        if (heap_used) {
+            free(temp);
+        }
         FRAM_UNLOCK();
         return false;
     }
-    
+
     memcpy(data, (const void *)&temp[3], size);
-    if (heap_used) free(temp);
+    if (heap_used) {
+        free(temp);
+    }
 
     FRAM_UNLOCK();
     return true;
@@ -316,7 +288,7 @@ bool Fram_Log_Init(void)
     if (header.magic != FRAM_LOG_MAGIC ||
         header.max_records != FRAM_LOG_MAX_RECORDS ||
         header.record_size != FRAM_LOG_RECORD_SIZE) {
-        
+
         ESP_LOGW(FRAM_TAG, "Invalid/Uninitialized FRAM Log Header. Initializing new Header...");
         memset(&header, 0, sizeof(header));
         header.magic = FRAM_LOG_MAGIC;
@@ -358,7 +330,7 @@ bool Fram_Log_Write_Record(float ph, float temp, float do_mg_l, uint8_t flags)
     if (header.magic != FRAM_LOG_MAGIC) {
         if (!Fram_Log_Init()) {
             FRAM_UNLOCK();
-            return false;   
+            return false;
         }
         Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
     }
@@ -375,13 +347,13 @@ bool Fram_Log_Write_Record(float ph, float temp, float do_mg_l, uint8_t flags)
     memset(&rec, 0, sizeof(rec));
     rec.timestamp = (uint32_t)cur_time;
     rec.ph_x100 = (uint16_t)(ph * 100.0f + 0.5f);
-    
+
     if (temp >= 0) {
         rec.temp_x100 = (int16_t)(temp * 100.0f + 0.5f);
     } else {
         rec.temp_x100 = (int16_t)(temp * 100.0f - 0.5f);
     }
-    
+
     rec.do_x100 = (uint16_t)(do_mg_l * 100.0f + 0.5f);
     rec.flags = flags;
     rec.reserved = 0;
@@ -425,7 +397,9 @@ bool Fram_Log_Write_Record(float ph, float temp, float do_mg_l, uint8_t flags)
     } else {
         unsynced = FRAM_LOG_MAX_RECORDS - header.synced_index + header.head_index;
     }
-    if (unsynced > header.record_count) unsynced = header.record_count;
+    if (unsynced > header.record_count) {
+        unsynced = header.record_count;
+    }
 
     FRAM_UNLOCK();
 
@@ -438,7 +412,9 @@ bool Fram_Log_Write_Record(float ph, float temp, float do_mg_l, uint8_t flags)
 
 bool Fram_Log_Read_Record(uint16_t relative_index, EnvLogRecord_t *record_out)
 {
-    if (record_out == NULL || !Fram_Init()) return false;
+    if (record_out == NULL || !Fram_Init()) {
+        return false;
+    }
 
     FRAM_LOCK();
 
@@ -465,7 +441,9 @@ bool Fram_Log_Read_Record(uint16_t relative_index, EnvLogRecord_t *record_out)
 
 bool Fram_Log_Read_Latest(EnvLogRecord_t *record_out)
 {
-    if (record_out == NULL || !Fram_Init()) return false;
+    if (record_out == NULL || !Fram_Init()) {
+        return false;
+    }
 
     Fram_Log_Header_t header;
     if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
@@ -481,20 +459,26 @@ bool Fram_Log_Read_Latest(EnvLogRecord_t *record_out)
 
 uint16_t Fram_Log_Get_Count(void)
 {
-    if (!Fram_Init()) return 0;
+    if (!Fram_Init()) {
+        return 0;
+    }
 
     Fram_Log_Header_t header;
     if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
         return 0;
     }
 
-    if (header.magic != FRAM_LOG_MAGIC) return 0;
+    if (header.magic != FRAM_LOG_MAGIC) {
+        return 0;
+    }
     return header.record_count;
 }
 
 uint16_t Fram_Log_Get_Unsynced_Count(void)
 {
-    if (!Fram_Init()) return 0;
+    if (!Fram_Init()) {
+        return 0;
+    }
 
     Fram_Log_Header_t header;
     if (!Fram_Read_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header))) {
@@ -522,7 +506,9 @@ uint16_t Fram_Log_Get_Unsynced_Count(void)
 bool Fram_Log_Get_Unsynced_Batch(EnvLogRecord_t *records_out, uint16_t max_records, uint16_t *count_out)
 {
     if (records_out == NULL || count_out == NULL || max_records == 0 || !Fram_Init()) {
-        if (count_out) *count_out = 0;
+        if (count_out) {
+            *count_out = 0;
+        }
         return false;
     }
 
@@ -559,7 +545,9 @@ bool Fram_Log_Get_Unsynced_Batch(EnvLogRecord_t *records_out, uint16_t max_recor
 
 bool Fram_Log_Commit_Synced_Count(uint16_t count)
 {
-    if (count == 0 || !Fram_Init()) return true;
+    if (count == 0 || !Fram_Init()) {
+        return true;
+    }
 
     FRAM_LOCK();
 
@@ -569,23 +557,25 @@ bool Fram_Log_Commit_Synced_Count(uint16_t count)
         return false;
     }
 
-    if (header.magic != FRAM_LOG_MAGIC){
+    if (header.magic != FRAM_LOG_MAGIC) {
         FRAM_UNLOCK();
         return false;
-    } 
+    }
 
     header.synced_index = (header.synced_index + count) % FRAM_LOG_MAX_RECORDS;
     Fram_Write_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
 
     FRAM_UNLOCK();
-    
+
     ESP_LOGI(FRAM_TAG, "Committed %u synced records. New synced_index=%u", count, header.synced_index);
     return true;
 }
 
 void Fram_Log_Clear_All(void)
 {
-    if (!Fram_Init()) return;
+    if (!Fram_Init()) {
+        return;
+    }
 
     FRAM_LOCK();
 
@@ -600,34 +590,34 @@ void Fram_Log_Clear_All(void)
     header.record_size = FRAM_LOG_RECORD_SIZE;
 
     Fram_Write_Data(FRAM_LOG_HEADER_ADDR, (uint8_t *)&header, sizeof(header));
-    
+
     FRAM_UNLOCK();
 
     ESP_LOGI(FRAM_TAG, "FRAM Environment Log cleared successfully.");
 }
 
-void User_Fram_Task()
+void User_Fram_Task(void)
 {
     Fram_Log_Init();
 
     // Chờ 10 giây ban đầu cho cảm biến ổn định và đồng bộ thời gian nếu có
     vTaskDelay(pdMS_TO_TICKS(10000));
 
-    while (1)
-    {
+    while (1) {
         time_t cur_time = time(NULL);
-        if (cur_time >= 1700000000)
-        {
+        if (cur_time >= 1700000000) {
             PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
 
             uint8_t flags = 0;
-            if (status.is_calibrated) flags |= (1 << 0);
-            if (status.do_valid)       flags |= (1 << 1);
+            if (status.is_calibrated) {
+                flags |= (1 << 0);
+            }
+            if (status.do_valid) {
+                flags |= (1 << 1);
+            }
 
             Fram_Log_Write_Record(status.ph, status.temperature, status.do_mg_l, flags);
-        }
-        else
-        {
+        } else {
             ESP_LOGW(FRAM_TAG, "Chua co thoi gian thuc chuan (time < 2024), tam ngung ghi log FRAM...");
         }
 

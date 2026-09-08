@@ -3,10 +3,13 @@
  * @brief   Custom high-resolution font generated from Arial Bold for LCD ST7565/7
  */
 
-#ifndef LARGE_FONT_H
-#define LARGE_FONT_H
+#pragma once
 
 #include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct {
     uint8_t width;
@@ -22,4 +25,6 @@ typedef struct {
 extern const font_char_t g_large_font[];
 extern const medium_font_char_t g_medium_font[];
 
-#endif // LARGE_FONT_H
+#ifdef __cplusplus
+}
+#endif

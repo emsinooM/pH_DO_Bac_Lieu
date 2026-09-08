@@ -1,7 +1,8 @@
-#include "filter.h"
+#include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
-#include <math.h>
+
+#include "filter.h"
 
 filter_level_t g_filter_level = FILTER_LEVEL_L;
 
@@ -9,7 +10,8 @@ MedianFilter_t ph_median_filter = {0};
 MedianFilter_t temp_median_filter = {0};
 
 // Hàm khởi tạo bộ lọc và Mutex
-void init_moving_average(MovingAverage_t *filter) {
+void init_moving_average(MovingAverage_t *filter)
+{
     filter->size = FILTER_L_SIZE; // Mặc định là 5s (10 mẫu)
     for (int i = 0; i < MAX_FILTER_SIZE; i++) {
         filter->buffer[i] = 0;
@@ -20,7 +22,8 @@ void init_moving_average(MovingAverage_t *filter) {
     filter->mutex = xSemaphoreCreateMutex();
 }
 
-int32_t apply_moving_average(MovingAverage_t *filter, int32_t new_val) {
+int32_t apply_moving_average(MovingAverage_t *filter, int32_t new_val)
+{
     int32_t avg = 0;
 
     // Khóa Mutex trước khi can thiệp vào buffer
@@ -41,7 +44,7 @@ int32_t apply_moving_average(MovingAverage_t *filter, int32_t new_val) {
     }
     filter->running_sum += new_val;
     filter->buffer[filter->index] = new_val;
-    
+
     filter->index++;
     if (filter->index >= current_size) {
         filter->index = 0;
@@ -62,7 +65,8 @@ int32_t apply_moving_average(MovingAverage_t *filter, int32_t new_val) {
     return avg;
 }
 
-void set_moving_average_size(MovingAverage_t *filter, uint16_t new_size) {
+void set_moving_average_size(MovingAverage_t *filter, uint16_t new_size)
+{
     if (filter->mutex != NULL) {
         xSemaphoreTake(filter->mutex, portMAX_DELAY);
     }
@@ -87,7 +91,8 @@ void set_moving_average_size(MovingAverage_t *filter, uint16_t new_size) {
     }
 }
 
-void update_system_filters_level(filter_level_t level) {
+void update_system_filters_level(filter_level_t level)
+{
     uint16_t size = FILTER_L_SIZE;
     if (level == FILTER_LEVEL_M) {
         size = FILTER_M_SIZE;
@@ -99,7 +104,8 @@ void update_system_filters_level(filter_level_t level) {
     set_moving_average_size(&temp_filter, size);
 }
 
-void init_median_filter(MedianFilter_t *filter, int32_t initial_val) {
+void init_median_filter(MedianFilter_t *filter, int32_t initial_val)
+{
     if (filter->mutex == NULL) {
         filter->mutex = xSemaphoreCreateMutex();
     }
@@ -119,7 +125,8 @@ void init_median_filter(MedianFilter_t *filter, int32_t initial_val) {
     }
 }
 
-int32_t apply_median_filter(MedianFilter_t *filter, int32_t new_val) {
+int32_t apply_median_filter(MedianFilter_t *filter, int32_t new_val)
+{
     int32_t median = new_val;
 
     if (filter->mutex != NULL) {
@@ -161,7 +168,8 @@ int32_t apply_median_filter(MedianFilter_t *filter, int32_t new_val) {
 SpikeFilter_t ph_spike_filter = {0};
 SpikeFilter_t temp_spike_filter = {0};
 
-void reset_moving_average_val(MovingAverage_t *filter, int32_t fill_val) {
+void reset_moving_average_val(MovingAverage_t *filter, int32_t fill_val)
+{
     if (filter->mutex != NULL) {
         xSemaphoreTake(filter->mutex, portMAX_DELAY);
     }
@@ -183,7 +191,8 @@ void reset_moving_average_val(MovingAverage_t *filter, int32_t fill_val) {
     }
 }
 
-void reset_median_filter_val(MedianFilter_t *filter, int32_t fill_val) {
+void reset_median_filter_val(MedianFilter_t *filter, int32_t fill_val)
+{
     if (filter->mutex != NULL) {
         xSemaphoreTake(filter->mutex, portMAX_DELAY);
     }
@@ -199,7 +208,8 @@ void reset_median_filter_val(MedianFilter_t *filter, int32_t fill_val) {
     }
 }
 
-void init_spike_filter(SpikeFilter_t *filter, int32_t initial_val, int32_t max_delta, uint8_t max_allowed_spikes) {
+void init_spike_filter(SpikeFilter_t *filter, int32_t initial_val, int32_t max_delta, uint8_t max_allowed_spikes)
+{
     if (filter->mutex == NULL) {
         filter->mutex = xSemaphoreCreateMutex();
     }
@@ -218,7 +228,8 @@ void init_spike_filter(SpikeFilter_t *filter, int32_t initial_val, int32_t max_d
     }
 }
 
-int32_t apply_spike_filter(SpikeFilter_t *filter, int32_t new_val, bool *out_step_detected) {
+int32_t apply_spike_filter(SpikeFilter_t *filter, int32_t new_val, bool *out_step_detected)
+{
     int32_t result = new_val;
     bool step_detected = false;
 
@@ -269,7 +280,8 @@ EwmaFilter_t temp_ewma_filter = {0};
 Kalman1D_t ph_kalman_filter = {0};
 Kalman1D_t do_kalman_filter = {0};
 
-void ewma_init(EwmaFilter_t *filter, float initial_val, float alpha) {
+void ewma_init(EwmaFilter_t *filter, float initial_val, float alpha)
+{
     if (filter->mutex == NULL) {
         filter->mutex = xSemaphoreCreateMutex();
     }
@@ -284,7 +296,8 @@ void ewma_init(EwmaFilter_t *filter, float initial_val, float alpha) {
     }
 }
 
-float ewma_update(EwmaFilter_t *filter, float input) {
+float ewma_update(EwmaFilter_t *filter, float input)
+{
     float output = input;
     if (filter->mutex != NULL) {
         xSemaphoreTake(filter->mutex, portMAX_DELAY);
@@ -302,7 +315,8 @@ float ewma_update(EwmaFilter_t *filter, float input) {
     return output;
 }
 
-void ewma_reset(EwmaFilter_t *filter, float reset_val) {
+void ewma_reset(EwmaFilter_t *filter, float reset_val)
+{
     if (filter->mutex != NULL) {
         xSemaphoreTake(filter->mutex, portMAX_DELAY);
     }
@@ -313,7 +327,8 @@ void ewma_reset(EwmaFilter_t *filter, float reset_val) {
     }
 }
 
-void kalman1d_init(Kalman1D_t *k, float initial_val, float Q, float R) {
+void kalman1d_init(Kalman1D_t *k, float initial_val, float Q, float R)
+{
     if (k->mutex == NULL) {
         k->mutex = xSemaphoreCreateMutex();
     }
@@ -330,7 +345,8 @@ void kalman1d_init(Kalman1D_t *k, float initial_val, float Q, float R) {
     }
 }
 
-float kalman1d_update(Kalman1D_t *k, float measurement) {
+float kalman1d_update(Kalman1D_t *k, float measurement)
+{
     float result = measurement;
     if (k->mutex != NULL) {
         xSemaphoreTake(k->mutex, portMAX_DELAY);
@@ -352,7 +368,8 @@ float kalman1d_update(Kalman1D_t *k, float measurement) {
     return result;
 }
 
-void kalman1d_reset(Kalman1D_t *k, float reset_val) {
+void kalman1d_reset(Kalman1D_t *k, float reset_val)
+{
     if (k->mutex != NULL) {
         xSemaphoreTake(k->mutex, portMAX_DELAY);
     }

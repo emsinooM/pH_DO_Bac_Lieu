@@ -20,11 +20,14 @@
  *                          └─ 4 Sensor Settings → Cal | Filter | Temp
  */
 
-#ifndef MENU_H
-#define MENU_H
+#pragma once
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* =====================================================================
  * Ngôn ngữ hệ thống
@@ -87,16 +90,16 @@ extern display_view_t g_display_view;
 typedef enum {
     PAGE_MEASUREMENT = 0,   /**< Màn hình đo lường (mặc định) */
 
-    /* Level 1 */
+    // Level 1
     PAGE_MAIN_MENU,
 
-    /* Level 2 */
+    // Level 2
     PAGE_SYSTEM_SETTINGS,
     PAGE_SENSOR_SETTINGS,
     PAGE_MODBUS_SETTINGS,
     PAGE_HISTORY_LOG,       /**< Trang xem lịch sử dữ liệu FRAM */
 
-    /* Level 3 – System Settings */
+    // Level 3 – System Settings
     PAGE_LANGUAGE,
     PAGE_DATE,
     PAGE_DATE_FORMAT,
@@ -107,7 +110,7 @@ typedef enum {
     PAGE_SCREEN_RES_RATIO,
     PAGE_CHANGE_PIN,
 
-    /* Level 3 – Sensor Settings */
+    // Level 3 – Sensor Settings
     PAGE_PH_SETTINGS,
     PAGE_PH_HEALTH,
     PAGE_DO_SETTINGS,
@@ -127,7 +130,7 @@ typedef enum {
     PAGE_TEMP_SETTINGS,
     PAGE_TEMP_LIN_COMP,
 
-    /* Level 3 – Modbus Settings */
+    // Level 3 – Modbus Settings
     PAGE_MODBUS_PORT1,
     PAGE_MODBUS_PORT2,
     PAGE_MODBUS_EDIT_ADDR,
@@ -135,13 +138,13 @@ typedef enum {
     PAGE_MODBUS_SELECT_PARITY,
     PAGE_MODBUS_SELECT_STOP,
 
-    /* Level 2/3 – WiFi Settings */
+    // Level 2/3 – WiFi Settings
     PAGE_WIFI_SETTINGS,
     PAGE_WIFI_SCAN_LIST,
     PAGE_WIFI_PASS_ENTRY,
     PAGE_WIFI_STATUS,
 
-    /* Level 2 – Device Info */
+    // Level 2 – Device Info
     PAGE_DEVICE_INFO,
 
     PAGE_LEAF,              /**< Mục lá – không có trang con   */
@@ -187,4 +190,6 @@ void menu_render(void);
  */
 bool menu_simulate_press(const char *btn_name);
 
-#endif /* MENU_H */
+#ifdef __cplusplus
+}
+#endif

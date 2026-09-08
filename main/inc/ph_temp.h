@@ -1,18 +1,19 @@
-#ifndef PH_TEMP_H
-#define PH_TEMP_H
+#pragma once
 
 #include <stdbool.h>
 #include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Hằng số dùng chung cho tính toán pH & Nhiệt độ
 // Định nghĩa lại 2 mốc điện áp riêng biệt
 #define V_REF_ADC       2.048f  // <-- THAY BẰNG ÁP VDD BẠN ĐO ĐƯỢC TẠI CHÂN 7
 #define V_REF_BRIDGE    2.048f
-// #define V_PH_REF_ACTUAL 2.201f  // Giá trị thực tế tại chân ph_REFM
-// #define V_REF           1.25f
 #define PGA             1.0f
 #define ADC_SCALE       8388607.0f
-#define ADC_DIVISOR     (ADC_SCALE * 2.0f * PGA)  
+#define ADC_DIVISOR     (ADC_SCALE * 2.0f * PGA)
 
 #define NTC_T0_KELVIN               (25.0f + 273.15f)
 #define NTC_NOMINAL_RESISTANCE      10000.0f
@@ -29,11 +30,11 @@ typedef struct {
     float ph10_voltage_mv;  // Hiệu điện thế thực tế đo được tại pH 9.18 hoặc 10.00 (mV)
     float ph10_temp_c;      // Nhiệt độ dung dịch đo lúc hiệu chuẩn pH 9.18/10.00 (C)
     float ph10_target;      // Giá trị pH mục tiêu kiềm (9.18 hoặc 10.00)
-    
+
     float slope_norm;       // Độ dốc chuẩn hóa axit (pH * K / mV) (cho pH <= 7.00)
     float slope_high;       // Độ dốc chuẩn hóa kiềm (pH * K / mV) (cho pH > 7.00)
     float u7;               // Điểm lệch chuẩn hóa thực tế tại pH 7.00/6.86 (mV/K)
-    
+
     uint8_t cal_type;       // 2 = Hiệu chuẩn 2 điểm, 3 = Hiệu chuẩn 3 điểm
     bool is_calibrated;     // Trạng thái xác định hệ thống đã được hiệu chuẩn thành công hay chưa
 } PhCalibration_t;
@@ -65,7 +66,7 @@ typedef struct {
     bool is_calibrated;     // Đã được hiệu chuẩn hay chưa
     bool ph_valid;          // Trạng thái dữ liệu pH hợp lệ (0 <= pH <= 14)
     bool temp_valid;        // Trạng thái dữ liệu nhiệt độ hợp lệ (0 <= Temp <= 60 C cho ATC)
-    
+
     // Các tham số hiệu chuẩn hiện tại
     float ph7_voltage_mv;
     float ph7_temp_c;
@@ -111,4 +112,6 @@ typedef struct {
 
 PhSensorHealth_t Get_PH_Sensor_Health(void);
 
-#endif // PH_TEMP_H
+#ifdef __cplusplus
+}
+#endif

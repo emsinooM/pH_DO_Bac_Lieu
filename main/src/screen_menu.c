@@ -13,34 +13,34 @@
  *   ESC        → quay lại trang cha
  */
 
-#include "screen_menu.h"
-#include "screen_disp.h"
-#include "user_storage.h"
-#include "filter.h"
-#include "ph_temp.h"
-#include "do_sensor.h"
-#include "ds3231.h"
-#include "user_fram.h"
-#include "wifi_config_manager.h"
-#include "esp_netif.h"
-#include "user_system.h"
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
 
+#include <sys/time.h>
 
-
-#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "esp_ota_ops.h"
 #include "esp_wifi.h"
+
+#include "do_sensor.h"
+#include "ds3231.h"
+#include "filter.h"
+#include "ph_temp.h"
+#include "screen_disp.h"
+#include "screen_menu.h"
 #include "user_azure.h"
+#include "user_fram.h"
 #include "user_ota.h"
-#include <string.h>
-#include <stdio.h>
-#include <time.h>
-#include <sys/time.h>
+#include "user_storage.h"
+#include "user_system.h"
+#include "wifi_config_manager.h"
 
 static const char *TAG_MENU = "MENU";
 
@@ -920,7 +920,7 @@ static char s_wifi_selected_ssid[33] = {0};
 static char s_wifi_pass_input[65] = {0};
 static uint8_t s_wifi_pass_len = 0;
 
-static const char s_char_picker_set[] = 
+static const char s_char_picker_set[] =
     "abcdefghijklmnopqrstuvwxyz"
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "0123456789"
@@ -1028,8 +1028,12 @@ static void time_edit_begin(void)
 static void time_edit_clamp_day(void)
 {
     uint8_t maxd = time_days_in_month(s_time_edit.tm_year, s_time_edit.tm_mon);
-    if (s_time_edit.tm_mday < 1) s_time_edit.tm_mday = maxd;
-    if (s_time_edit.tm_mday > maxd) s_time_edit.tm_mday = 1;
+    if (s_time_edit.tm_mday < 1) {
+        s_time_edit.tm_mday = maxd;
+    }
+    if (s_time_edit.tm_mday > maxd) {
+        s_time_edit.tm_mday = 1;
+    }
 }
 
 static void time_edit_adjust(int8_t dir)
@@ -1037,39 +1041,64 @@ static void time_edit_adjust(int8_t dir)
     switch (s_time_field) {
     case 0: /* nam 2000..2099 (tm_year 100..199) */
         s_time_edit.tm_year += dir;
-        if (s_time_edit.tm_year < 100) s_time_edit.tm_year = 199;
-        if (s_time_edit.tm_year > 199) s_time_edit.tm_year = 100;
+        if (s_time_edit.tm_year < 100) {
+            s_time_edit.tm_year = 199;
+        }
+        if (s_time_edit.tm_year > 199) {
+            s_time_edit.tm_year = 100;
+        }
         time_edit_clamp_day();
         break;
     case 1: /* thang 0..11 */
         s_time_edit.tm_mon += dir;
-        if (s_time_edit.tm_mon < 0) s_time_edit.tm_mon = 11;
-        if (s_time_edit.tm_mon > 11) s_time_edit.tm_mon = 0;
+        if (s_time_edit.tm_mon < 0) {
+            s_time_edit.tm_mon = 11;
+        }
+        if (s_time_edit.tm_mon > 11) {
+            s_time_edit.tm_mon = 0;
+        }
         time_edit_clamp_day();
         break;
     case 2: { /* ngay 1..maxd */
         uint8_t maxd = time_days_in_month(s_time_edit.tm_year, s_time_edit.tm_mon);
         s_time_edit.tm_mday += dir;
-        if (s_time_edit.tm_mday < 1) s_time_edit.tm_mday = maxd;
-        if (s_time_edit.tm_mday > maxd) s_time_edit.tm_mday = 1;
+        if (s_time_edit.tm_mday < 1) {
+            s_time_edit.tm_mday = maxd;
+        }
+        if (s_time_edit.tm_mday > maxd) {
+            s_time_edit.tm_mday = 1;
+        }
         break;
     }
     case 3: /* gio 0..23 */
         s_time_edit.tm_hour += dir;
-        if (s_time_edit.tm_hour < 0) s_time_edit.tm_hour = 23;
-        if (s_time_edit.tm_hour > 23) s_time_edit.tm_hour = 0;
+        if (s_time_edit.tm_hour < 0) {
+            s_time_edit.tm_hour = 23;
+        }
+        if (s_time_edit.tm_hour > 23) {
+            s_time_edit.tm_hour = 0;
+        }
         break;
     case 4: /* phut 0..59 */
         s_time_edit.tm_min += dir;
-        if (s_time_edit.tm_min < 0) s_time_edit.tm_min = 59;
-        if (s_time_edit.tm_min > 59) s_time_edit.tm_min = 0;
+        if (s_time_edit.tm_min < 0) {
+            s_time_edit.tm_min = 59;
+        }
+        if (s_time_edit.tm_min > 59) {
+            s_time_edit.tm_min = 0;
+        }
         break;
     case 5: /* giay 0..59 */
         s_time_edit.tm_sec += dir;
-        if (s_time_edit.tm_sec < 0) s_time_edit.tm_sec = 59;
-        if (s_time_edit.tm_sec > 59) s_time_edit.tm_sec = 0;
+        if (s_time_edit.tm_sec < 0) {
+            s_time_edit.tm_sec = 59;
+        }
+        if (s_time_edit.tm_sec > 59) {
+            s_time_edit.tm_sec = 0;
+        }
         break;
-    default: break;
+    default:
+        break;
     }
 }
 
@@ -1294,7 +1323,9 @@ static void poll_and_debounce_buttons(void)
  */
 static bool btn_edge(btn_idx_t idx)
 {
-    if (idx >= BTN_COUNT) return false;
+    if (idx >= BTN_COUNT) {
+        return false;
+    }
     if (s_btn_simulated[idx]) {
         s_btn_simulated[idx] = false;
         return true;
@@ -1310,7 +1341,9 @@ static bool btn_edge(btn_idx_t idx)
  */
 static __attribute__((unused)) bool btn_edge_or_repeat(btn_idx_t idx, uint32_t initial_delay_ms, uint32_t repeat_interval_ms)
 {
-    if (idx >= BTN_COUNT) return false;
+    if (idx >= BTN_COUNT) {
+        return false;
+    }
 
     // Giả lập
     if (s_btn_simulated[idx]) {
@@ -1326,13 +1359,13 @@ static __attribute__((unused)) bool btn_edge_or_repeat(btn_idx_t idx, uint32_t i
     // Nhấn giữ (auto-repeat) với tốc độ ổn định
     if (s_btn_state[idx] && s_btn_press_tick[idx] != 0) {
         TickType_t now = xTaskGetTickCount();
-        TickType_t elapsed_press = (now >= s_btn_press_tick[idx]) ? 
-                                   (now - s_btn_press_tick[idx]) : 
+        TickType_t elapsed_press = (now >= s_btn_press_tick[idx]) ?
+                                   (now - s_btn_press_tick[idx]) :
                                    (portMAX_DELAY - s_btn_press_tick[idx] + now);
 
         if (elapsed_press >= pdMS_TO_TICKS(initial_delay_ms)) {
-            TickType_t elapsed_repeat = (now >= s_btn_last_repeat_tick[idx]) ? 
-                                        (now - s_btn_last_repeat_tick[idx]) : 
+            TickType_t elapsed_repeat = (now >= s_btn_last_repeat_tick[idx]) ?
+                                        (now - s_btn_last_repeat_tick[idx]) :
                                         (portMAX_DELAY - s_btn_last_repeat_tick[idx] + now);
 
             if (elapsed_repeat >= pdMS_TO_TICKS(repeat_interval_ms)) {
@@ -1425,7 +1458,7 @@ static void menu_show_alert_dialog(const char *title, const char *msg, bool succ
 
     // 3. Vẽ viền hình chữ nhật bên trong (tạo hiệu ứng viền đôi 3D nổi bật)
     LCD_DrawRect(14, 16, 100, 32, LCD_COLOR_ON);
-    
+
     // 4. Vẽ thanh tiêu đề đảo màu (nền đen chữ trắng)
     LCD_FillRect(15, 17, 98, 9, LCD_COLOR_ON);
 
@@ -1433,12 +1466,12 @@ static void menu_show_alert_dialog(const char *title, const char *msg, bool succ
     int title_len = strlen(title);
     int title_x = 12 + (104 - title_len * 6) / 2;
     LCD_DrawString(title_x, 18, title, LCD_COLOR_OFF); // Chữ trắng trên nền đen
-    
+
     // 6. Tính toán vị trí X để căn giữa chuỗi Thông báo (Message)
     int msg_len = strlen(msg);
     int msg_x = 12 + (104 - msg_len * 6) / 2;
     LCD_DrawString(msg_x, 34, msg, LCD_COLOR_ON);    // Chữ đen trên nền trắng
-    
+
     // 7. Gửi dữ liệu từ Framebuffer lên màn hình LCD & Dừng 1.5 giây
     LCD_Flush();
     vTaskDelay(pdMS_TO_TICKS(1500)); // Khóa màn hình hiển thị thông báo trong 1.5 giây
@@ -1483,7 +1516,9 @@ static void menu_render_wifi_scan_list(void)
             LCD_DrawString((128 - w2) / 2, 34, msg2, LCD_COLOR_ON);
         } else {
             uint8_t visible = s_wifi_scan_ap_count - s_wifi_scan_scroll_offset;
-            if (visible > VISIBLE_ITEMS) visible = VISIBLE_ITEMS;
+            if (visible > VISIBLE_ITEMS) {
+                visible = VISIBLE_ITEMS;
+            }
 
             for (uint8_t i = 0; i < visible; i++) {
                 uint8_t idx = s_wifi_scan_scroll_offset + i;
@@ -1895,7 +1930,9 @@ static void menu_render_device_info(void)
 
     /* ── Vẽ các dòng hiển thị trong cửa sổ cuộn ── */
     uint8_t visible = count - s_device_info_scroll_offset;
-    if (visible > VISIBLE_ITEMS) visible = VISIBLE_ITEMS;
+    if (visible > VISIBLE_ITEMS) {
+        visible = VISIBLE_ITEMS;
+    }
 
     for (uint8_t i = 0; i < visible; i++) {
         uint8_t idx = s_device_info_scroll_offset + i;
@@ -1966,24 +2003,21 @@ static void menu_handle_leaf_select(void)
         menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Ngon Ngu" : "Language", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
         g_lcd_need_redraw = true;
         goto_page(PAGE_SYSTEM_SETTINGS);
-    }
-    else if (cur == PAGE_DATE_FORMAT) {
+    } else if (cur == PAGE_DATE_FORMAT) {
         g_date_format = (date_format_t)sel;
         Nvs_Write_Number("date_format", (uint32_t)g_date_format);
         ESP_LOGI(TAG_MENU, "Luu dinh dang ngay NVS: %d", g_date_format);
         menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Dinh Dang Ngay" : "Day Format", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
         g_lcd_need_redraw = true;
         goto_page(PAGE_DATE);
-    }
-    else if (cur == PAGE_DISPLAY_MODE) {
+    } else if (cur == PAGE_DISPLAY_MODE) {
         g_display_mode = (display_mode_t)sel;
         Nvs_Write_Number("disp_mode", (uint32_t)g_display_mode);
         ESP_LOGI(TAG_MENU, "Luu che do hien thi NVS: %d", g_display_mode);
         menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Che Do Hien Thi" : "Display Mode", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
         g_lcd_need_redraw = true;
         goto_page(PAGE_MAIN_MENU);
-    }
-    else if (cur == PAGE_DIGITAL_FILTER) {
+    } else if (cur == PAGE_DIGITAL_FILTER) {
         g_filter_level = (filter_level_t)sel;
         Nvs_Write_Number("filter_lvl", (uint32_t)g_filter_level);
         update_system_filters_level(g_filter_level);
@@ -1991,32 +2025,28 @@ static void menu_handle_leaf_select(void)
         menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Bo Loc So" : "Digital Filter", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
         g_lcd_need_redraw = true;
         goto_page(PAGE_PH_SETTINGS);
-    }
-    else if (cur == PAGE_TEMP_MODE) {
+    } else if (cur == PAGE_TEMP_MODE) {
         g_temp_mode = (temp_mode_t)sel;
         Save_Temp_Settings_To_Storage();
         ESP_LOGI(TAG_MENU, "Luu che do nhiet do NVS: %d", g_temp_mode);
         menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Che Do Nhiet Do" : "Temp Mode", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
         g_lcd_need_redraw = true;
         goto_page(PAGE_PH_SETTINGS);
-    }
-    else if (cur == PAGE_CALIBRATION) {
+    } else if (cur == PAGE_CALIBRATION) {
         if (sel == 2) {
             s_confirm_reset_target = RESET_TARGET_PH;
             s_confirm_reset_prev_page = PAGE_CALIBRATION;
             goto_page(PAGE_CONFIRM_RESET);
             g_lcd_need_redraw = true;
         }
-    }
-    else if (cur == PAGE_DO_SETTINGS) {
+    } else if (cur == PAGE_DO_SETTINGS) {
         if (sel == 1) {
             s_confirm_reset_target = RESET_TARGET_DO;
             s_confirm_reset_prev_page = PAGE_DO_SETTINGS;
             goto_page(PAGE_CONFIRM_RESET);
             g_lcd_need_redraw = true;
         }
-    }
-    else if (cur == PAGE_CAL_2PT) {
+    } else if (cur == PAGE_CAL_2PT) {
         if (sel == 0) {
             s_cal_exec.target_ph = 4.00f;
             s_cal_exec.min_mv    = 140.0f;
@@ -2033,8 +2063,7 @@ static void menu_handle_leaf_select(void)
             goto_page(PAGE_CAL_EXEC);
         }
         g_lcd_need_redraw = true;
-    }
-    else if (cur == PAGE_CAL_3PT_G1) {
+    } else if (cur == PAGE_CAL_3PT_G1) {
         if (sel == 0) {
             s_cal_exec.target_ph = 4.00f;
             s_cal_exec.min_mv    = 140.0f;
@@ -2058,8 +2087,7 @@ static void menu_handle_leaf_select(void)
             goto_page(PAGE_CAL_EXEC);
         }
         g_lcd_need_redraw = true;
-    }
-    else if (cur == PAGE_CAL_3PT_G2) {
+    } else if (cur == PAGE_CAL_3PT_G2) {
         if (sel == 0) {
             s_cal_exec.target_ph = 4.00f;
             s_cal_exec.min_mv    = 140.0f;
@@ -2083,8 +2111,7 @@ static void menu_handle_leaf_select(void)
             goto_page(PAGE_CAL_EXEC);
         }
         g_lcd_need_redraw = true;
-    }
-    else if (cur == PAGE_RESET_SENSOR) {
+    } else if (cur == PAGE_RESET_SENSOR) {
         if (sel == 0) {
             s_confirm_reset_target = RESET_TARGET_PH;
             s_confirm_reset_prev_page = PAGE_RESET_SENSOR;
@@ -2095,16 +2122,14 @@ static void menu_handle_leaf_select(void)
             goto_page(PAGE_CONFIRM_RESET);
         }
         g_lcd_need_redraw = true;
-    }
-    else if (cur == PAGE_CAL_DO) {
+    } else if (cur == PAGE_CAL_DO) {
         if (sel == 3) {
             s_confirm_reset_target = RESET_TARGET_DO;
             s_confirm_reset_prev_page = PAGE_CAL_DO;
             goto_page(PAGE_CONFIRM_RESET);
             g_lcd_need_redraw = true;
         }
-    }
-    else if (cur == PAGE_MODBUS_SELECT_BAUD) {
+    } else if (cur == PAGE_MODBUS_SELECT_BAUD) {
         uint32_t bauds[] = {2400, 4800, 9600, 19200, 38400, 57600, 115200};
         uint32_t val = bauds[sel];
         if (s_modbus_edit_port == 1) {
@@ -2122,8 +2147,7 @@ static void menu_handle_leaf_select(void)
             goto_page(PAGE_MODBUS_PORT2);
         }
         g_lcd_need_redraw = true;
-    }
-    else if (cur == PAGE_MODBUS_SELECT_PARITY) {
+    } else if (cur == PAGE_MODBUS_SELECT_PARITY) {
         if (s_modbus_edit_port == 1) {
             g_mb1_parity = sel;
             Nvs_Write_Number("mb1_parity", sel);
@@ -2139,8 +2163,7 @@ static void menu_handle_leaf_select(void)
             goto_page(PAGE_MODBUS_PORT2);
         }
         g_lcd_need_redraw = true;
-    }
-    else if (cur == PAGE_MODBUS_SELECT_STOP) {
+    } else if (cur == PAGE_MODBUS_SELECT_STOP) {
         uint8_t stops[] = {1, 2};
         if (s_modbus_edit_port == 1) {
             g_mb1_stop = stops[sel];
@@ -2237,7 +2260,7 @@ static void menu_handle_modbus_addr_buttons(void)
             g_mb2_addr = s_modbus_addr_edit;
             Nvs_Write_Number("mb2_addr", g_mb2_addr); // Lưu NVS flash
             ESP_LOGI("MENU", "Luu Dia Chi Cong 2: %d", g_mb2_addr);
-            
+
             // Cập nhật cấu hình UART Modbus cho cảm biến DO ngay lập tức
             do_sensor_update_config(g_mb2_addr, g_mb2_baud, g_mb2_parity, g_mb2_stop);
         }
@@ -2358,8 +2381,8 @@ static void menu_render_cal_do_exec(void)
     PH_Temp_Sensor_Status_t status = Get_Sensor_Status();
     char val_str[32];
     snprintf(val_str, sizeof(val_str), "%.2f mg/L", status.do_mg_l);
-    
-    uint8_t w = strlen(val_str) * 6 * 2; 
+
+    uint8_t w = strlen(val_str) * 6 * 2;
     uint8_t x = (LCD_WIDTH - w) / 2;
     LCD_DrawStringScaled(x, 16, val_str, 2, 2, LCD_COLOR_ON);
 
@@ -2374,7 +2397,7 @@ static void menu_render_cal_do_exec(void)
     LCD_FillRect(0, STATUS_BAR_Y, 128, STATUS_BAR_H, LCD_COLOR_ON);
     LCD_DrawString(8, STATUS_BAR_Y + 3, g_sys_lang == LANG_VI ? "HUY" : "ESC", LCD_COLOR_OFF);
     LCD_DrawString(100, STATUS_BAR_Y + 3, g_sys_lang == LANG_VI ? "LUU" : "ENT", LCD_COLOR_OFF);
-    
+
     LCD_Flush();
 }
 
@@ -2659,7 +2682,7 @@ static void menu_render_temp_settings(void)
     uint8_t val_w = strlen(val_str) * 6 * 2;
     uint8_t val_x = (LCD_WIDTH - val_w) / 2;
     LCD_DrawStringScaled(val_x, 22, val_str, 2, 2, LCD_COLOR_ON);
-    
+
     // Gạch chân biểu thị đang chọn
     LCD_DrawHLine(val_x, 39, val_w - 6, LCD_COLOR_ON);
     LCD_DrawHLine(val_x, 40, val_w - 6, LCD_COLOR_ON);
@@ -2687,7 +2710,7 @@ static void menu_render_temp_settings(void)
     LCD_DrawString(8, STATUS_BAR_Y + 3, "ESC", LCD_COLOR_OFF);
     LCD_DrawString(44, STATUS_BAR_Y + 3, "-/+", LCD_COLOR_OFF);
     LCD_DrawString(100, STATUS_BAR_Y + 3, "ENT", LCD_COLOR_OFF);
-    
+
     LCD_Flush();
 }
 
@@ -2706,10 +2729,14 @@ static void menu_handle_temp_settings_buttons(void)
     if (btn_edge(BTN_IDX_UP)) {
         if (is_mtc) {
             float max_limit = is_f ? 212.0f : 100.0f;
-            if (s_manual_temp_edit < max_limit - 0.05f) s_manual_temp_edit += 0.1f;
+            if (s_manual_temp_edit < max_limit - 0.05f) {
+                s_manual_temp_edit += 0.1f;
+            }
         } else {
             float max_limit = is_f ? 18.0f : 10.0f; // Max offset: 10 C (18 F)
-            if (s_temp_offset_edit < max_limit - 0.05f) s_temp_offset_edit += 0.1f;
+            if (s_temp_offset_edit < max_limit - 0.05f) {
+                s_temp_offset_edit += 0.1f;
+            }
         }
         g_lcd_need_redraw = true;
     }
@@ -2718,10 +2745,14 @@ static void menu_handle_temp_settings_buttons(void)
     if (btn_edge(BTN_IDX_DOWN)) {
         if (is_mtc) {
             float min_limit = is_f ? 32.0f : 0.0f;
-            if (s_manual_temp_edit > min_limit + 0.05f) s_manual_temp_edit -= 0.1f;
+            if (s_manual_temp_edit > min_limit + 0.05f) {
+                s_manual_temp_edit -= 0.1f;
+            }
         } else {
             float min_limit = is_f ? -18.0f : -10.0f; // Min offset: -10 C (-18 F)
-            if (s_temp_offset_edit > min_limit + 0.05f) s_temp_offset_edit -= 0.1f;
+            if (s_temp_offset_edit > min_limit + 0.05f) {
+                s_temp_offset_edit -= 0.1f;
+            }
         }
         g_lcd_need_redraw = true;
     }
@@ -2734,8 +2765,12 @@ static void menu_handle_temp_settings_buttons(void)
             } else {
                 g_manual_temp = s_manual_temp_edit;
             }
-            if (g_manual_temp < 0.0f) g_manual_temp = 0.0f;
-            if (g_manual_temp > 100.0f) g_manual_temp = 100.0f;
+            if (g_manual_temp < 0.0f) {
+                g_manual_temp = 0.0f;
+            }
+            if (g_manual_temp > 100.0f) {
+                g_manual_temp = 100.0f;
+            }
 
             Save_Temp_Settings_To_Storage(); // Lưu vào NVS Flash
             menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Nhiet Do Thu Cong" : "Manual Temp", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
@@ -2745,8 +2780,12 @@ static void menu_handle_temp_settings_buttons(void)
             } else {
                 g_temp_offset = s_temp_offset_edit;
             }
-            if (g_temp_offset < -10.0f) g_temp_offset = -10.0f;
-            if (g_temp_offset > 10.0f) g_temp_offset = 10.0f;
+            if (g_temp_offset < -10.0f) {
+                g_temp_offset = -10.0f;
+            }
+            if (g_temp_offset > 10.0f) {
+                g_temp_offset = 10.0f;
+            }
 
             Save_Temp_Settings_To_Storage(); // Lưu vào NVS Flash
             menu_show_alert_dialog(g_sys_lang == LANG_VI ? "Hieu Chinh T" : "Temp Calibration", g_sys_lang == LANG_VI ? "Thanh Cong!" : "SUCCESS!", true);
@@ -2793,8 +2832,12 @@ static void menu_render_temp_lin_comp(void)
     float ph_raw = status.ph * (1.0f + g_temp_alpha * t_diff);
     // Tính toán lại pH đã bù theo hệ số alpha mới đang hiệu chỉnh
     float final_ph = ph_raw / (1.0f + s_temp_alpha_edit * t_diff);
-    if (final_ph < 0.0f) final_ph = 0.0f;
-    if (final_ph > 14.0f) final_ph = 14.0f;
+    if (final_ph < 0.0f) {
+        final_ph = 0.0f;
+    }
+    if (final_ph > 14.0f) {
+        final_ph = 14.0f;
+    }
 
     snprintf(res_str, sizeof(res_str), "pH (25\xB0" "C): %.2f pH", final_ph);
     uint8_t res_w = strlen(res_str) * 6;
@@ -2837,8 +2880,12 @@ static void menu_handle_temp_lin_comp_buttons(void)
     // ENTER - Lưu giá trị hệ số alpha
     if (btn_edge(BTN_IDX_ENTER)) {
         g_temp_alpha = s_temp_alpha_edit;
-        if (g_temp_alpha < -0.100f) g_temp_alpha = -0.100f;
-        if (g_temp_alpha > 0.100f) g_temp_alpha = 0.100f;
+        if (g_temp_alpha < -0.100f) {
+            g_temp_alpha = -0.100f;
+        }
+        if (g_temp_alpha > 0.100f) {
+            g_temp_alpha = 0.100f;
+        }
 
         Save_Temp_Settings_To_Storage();
         ESP_LOGI(TAG_MENU, "Da luu temp_alpha: %.3f", g_temp_alpha);
@@ -3420,7 +3467,9 @@ void menu_render(void)
         // Tính toán chiều rộng thanh hiển thị (bar width)
         // Độ tương phản từ 0 đến 63. Mép trong thanh trượt có chiều rộng là 96 pixel (16..111)
         uint8_t bar_w = (g_lcd_contrast * 96) / 63;
-        if (bar_w > 96) bar_w = 96;
+        if (bar_w > 96) {
+            bar_w = 96;
+        }
         LCD_FillRect(16, 30, bar_w, 4, LCD_COLOR_ON);
 
         // Hiển thị số đọc
@@ -3436,7 +3485,9 @@ void menu_render(void)
 
         // Tính toán chiều rộng thanh hiển thị (Tỷ số điện trở từ 0 đến 7)
         uint8_t bar_w = (g_lcd_resistor_ratio * 96) / 7;
-        if (bar_w > 96) bar_w = 96;
+        if (bar_w > 96) {
+            bar_w = 96;
+        }
         LCD_FillRect(16, 30, bar_w, 4, LCD_COLOR_ON);
 
         char val_str[16];
@@ -3519,7 +3570,9 @@ void menu_render(void)
 
         /* ── 2. Danh sách mục (y=13..48) ── */
         uint8_t visible = page->item_count - g_menu.scroll_offset;
-        if (visible > VISIBLE_ITEMS) visible = VISIBLE_ITEMS;
+        if (visible > VISIBLE_ITEMS) {
+            visible = VISIBLE_ITEMS;
+        }
 
         for (uint8_t i = 0; i < visible; i++) {
             uint8_t idx = g_menu.scroll_offset + i;
@@ -3530,51 +3583,55 @@ void menu_render(void)
             char item_dyn_buf[48];
 
             if (g_menu.current_page == PAGE_CAL_2PT) {
-                if (idx == 0) snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "1. Thap 4.00/%.1f" : "1. Low 4.00/%.1f", ph_cal.ph4_voltage_mv);
-                else if (idx == 1) snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "2. Cao  7.00/%.1f" : "2. High 7.00/%.1f", ph_cal.ph7_voltage_mv);
+                if (idx == 0) {
+                    snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "1. Thap 4.00/%.1f" : "1. Low 4.00/%.1f", ph_cal.ph4_voltage_mv);
+                } else if (idx == 1) {
+                    snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "2. Cao  7.00/%.1f" : "2. High 7.00/%.1f", ph_cal.ph7_voltage_mv);
+                }
                 item_str = item_dyn_buf;
             } else if (g_menu.current_page == PAGE_CAL_3PT_G1) {
-                if (idx == 0) snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "1. Thap 4.00/%.1f" : "1. Low 4.00/%.1f", ph_cal.ph4_voltage_mv);
-                else if (idx == 1) snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "2. Trung 6.86/%.1f" : "2. Mid 6.86/%.1f", ph_cal.ph7_voltage_mv);
-                else if (idx == 2) snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "3. Cao  9.18/%.1f" : "3. High 9.18/%.1f", ph_cal.ph10_voltage_mv);
+                if (idx == 0) {
+                    snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "1. Thap 4.00/%.1f" : "1. Low 4.00/%.1f", ph_cal.ph4_voltage_mv);
+                } else if (idx == 1) {
+                    snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "2. Trung 6.86/%.1f" : "2. Mid 6.86/%.1f", ph_cal.ph7_voltage_mv);
+                } else if (idx == 2) {
+                    snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "3. Cao  9.18/%.1f" : "3. High 9.18/%.1f", ph_cal.ph10_voltage_mv);
+                }
                 item_str = item_dyn_buf;
             } else if (g_menu.current_page == PAGE_CAL_3PT_G2) {
-                if (idx == 0) snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "1. Thap 4.00/%.1f" : "1. Low 4.00/%.1f", ph_cal.ph4_voltage_mv);
-                else if (idx == 1) snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "2. Trung 7.00/%.1f" : "2. Mid 7.00/%.1f", ph_cal.ph7_voltage_mv);
-                else if (idx == 2) snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "3. Cao  10.0/%.1f" : "3. High 10.0/%.1f", ph_cal.ph10_voltage_mv);
+                if (idx == 0) {
+                    snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "1. Thap 4.00/%.1f" : "1. Low 4.00/%.1f", ph_cal.ph4_voltage_mv);
+                } else if (idx == 1) {
+                    snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "2. Trung 7.00/%.1f" : "2. Mid 7.00/%.1f", ph_cal.ph7_voltage_mv);
+                } else if (idx == 2) {
+                    snprintf(item_dyn_buf, sizeof(item_dyn_buf), g_sys_lang == LANG_VI ? "3. Cao  10.0/%.1f" : "3. High 10.0/%.1f", ph_cal.ph10_voltage_mv);
+                }
                 item_str = item_dyn_buf;
             }
             if (g_menu.current_page == PAGE_LANGUAGE && idx == (uint8_t)g_sys_lang) {
                 is_active_choice = true;
-            }
-            else if (g_menu.current_page == PAGE_DATE_FORMAT && idx == (uint8_t)g_date_format) {
+            } else if (g_menu.current_page == PAGE_DATE_FORMAT && idx == (uint8_t)g_date_format) {
                 is_active_choice = true;
-            }
-            else if (g_menu.current_page == PAGE_DISPLAY_MODE) {
+            } else if (g_menu.current_page == PAGE_DISPLAY_MODE) {
                 if (idx == (uint8_t)g_display_mode) {
                     is_active_choice = true;
                 }
-            }
-            else if (g_menu.current_page == PAGE_DIGITAL_FILTER && idx == (uint8_t)g_filter_level) {
+            } else if (g_menu.current_page == PAGE_DIGITAL_FILTER && idx == (uint8_t)g_filter_level) {
                 is_active_choice = true;
-            }
-            else if (g_menu.current_page == PAGE_TEMP_MODE && idx == (uint8_t)g_temp_mode) {
+            } else if (g_menu.current_page == PAGE_TEMP_MODE && idx == (uint8_t)g_temp_mode) {
                 is_active_choice = true;
-            }
-            else if (g_menu.current_page == PAGE_MODBUS_SELECT_BAUD) {
+            } else if (g_menu.current_page == PAGE_MODBUS_SELECT_BAUD) {
                 uint32_t bauds[] = {2400, 4800, 9600, 19200, 38400, 57600, 115200};
                 uint32_t cur_baud = (s_modbus_edit_port == 1) ? g_mb1_baud : g_mb2_baud;
                 if (bauds[idx] == cur_baud) {
                     is_active_choice = true;
                 }
-            }
-            else if (g_menu.current_page == PAGE_MODBUS_SELECT_PARITY) {
+            } else if (g_menu.current_page == PAGE_MODBUS_SELECT_PARITY) {
                 uint8_t cur_parity = (s_modbus_edit_port == 1) ? g_mb1_parity : g_mb2_parity;
                 if (idx == cur_parity) {
                     is_active_choice = true;
                 }
-            }
-            else if (g_menu.current_page == PAGE_MODBUS_SELECT_STOP) {
+            } else if (g_menu.current_page == PAGE_MODBUS_SELECT_STOP) {
                 uint8_t stops[] = {1, 2};
                 uint8_t cur_stop = (s_modbus_edit_port == 1) ? g_mb1_stop : g_mb2_stop;
                 if (stops[idx] == cur_stop) {
@@ -3594,11 +3651,11 @@ void menu_render(void)
                 // 2. Nếu tên mục dài hơn khung hiển thị -> Kích hoạt chạy chữ
                 if (text_w > view_w) {
                     int16_t max_scroll = text_w - view_w; // Khoảng cách pixel tối đa cần dịch chuyển
-                    
+
                     // Tổng thời gian 1 chu kỳ = 30 ticks dừng đầu (1.5s) + max_scroll ticks trượt + 30 ticks dừng cuối (1.5s)
-                    uint32_t total_cycle = 30 + max_scroll + 30; 
+                    uint32_t total_cycle = 30 + max_scroll + 30;
                     uint32_t phase = s_menu_scroll_ticks % total_cycle; // Lấy pha hiện tại trong chu kỳ
-                    
+
                     if (phase < 30) {
                         scroll_x = 0;                  // Phase 1: Dừng 1.5s ở đầu dòng cho người dùng đọc
                     } else if (phase < 30 + max_scroll) {
@@ -3606,7 +3663,7 @@ void menu_render(void)
                     } else {
                         scroll_x = max_scroll;         // Phase 3: Dừng 1.5s ở cuối dòng trước khi lặp lại
                     }
-                    
+
                     // Yêu cầu task màn hình redraw liên tục để giữ tốc độ chạy chữ mượt mà
                     g_lcd_need_redraw = true;
                 }
@@ -3664,7 +3721,9 @@ void menu_render(void)
 
 bool menu_simulate_press(const char *btn_name)
 {
-    if (btn_name == NULL) return false;
+    if (btn_name == NULL) {
+        return false;
+    }
     btn_idx_t idx = BTN_COUNT;
     if (strcmp(btn_name, "esc") == 0) {
         idx = BTN_IDX_ESC;
@@ -3677,7 +3736,7 @@ bool menu_simulate_press(const char *btn_name)
     } else if (strcmp(btn_name, "enter") == 0) {
         idx = BTN_IDX_ENTER;
     }
-    
+
     if (idx < BTN_COUNT) {
         s_btn_simulated[idx] = true;
         return true;

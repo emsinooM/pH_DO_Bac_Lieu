@@ -1,22 +1,23 @@
-#include "do_sensor.h"
-#include "esp_err.h"
-#include "ph_temp.h"
-#include "filter.h"
-#include "esp_rom_sys.h"
-#include "user_storage.h"
-
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "driver/gpio.h"
-#include "esp_check.h"
-#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "portmacro.h"
 #include "projdefs.h"
+
+#include "driver/gpio.h"
+#include "esp_check.h"
+#include "esp_err.h"
+#include "esp_log.h"
+#include "esp_rom_sys.h"
+
+#include "do_sensor.h"
+#include "filter.h"
+#include "ph_temp.h"
+#include "user_storage.h"
 
 static const char *TAG = "do_sensor";
 
@@ -30,17 +31,34 @@ uint32_t g_mb2_baud = 9600;
 uint8_t g_mb2_parity = 0;
 uint8_t g_mb2_stop = 1;
 
-void do_sensor_load_settings(void) {
+void do_sensor_load_settings(void)
+{
     uint32_t val;
-    if (Nvs_Read_Number("mb1_addr", &val)) g_mb1_addr = (uint8_t)val;
-    if (Nvs_Read_Number("mb1_baud", &val)) g_mb1_baud = val;
-    if (Nvs_Read_Number("mb1_parity", &val)) g_mb1_parity = (uint8_t)val;
-    if (Nvs_Read_Number("mb1_stop", &val)) g_mb1_stop = (uint8_t)val;
+    if (Nvs_Read_Number("mb1_addr", &val)) {
+        g_mb1_addr = (uint8_t)val;
+    }
+    if (Nvs_Read_Number("mb1_baud", &val)) {
+        g_mb1_baud = val;
+    }
+    if (Nvs_Read_Number("mb1_parity", &val)) {
+        g_mb1_parity = (uint8_t)val;
+    }
+    if (Nvs_Read_Number("mb1_stop", &val)) {
+        g_mb1_stop = (uint8_t)val;
+    }
 
-    if (Nvs_Read_Number("mb2_addr", &val)) g_mb2_addr = (uint8_t)val;
-    if (Nvs_Read_Number("mb2_baud", &val)) g_mb2_baud = val;
-    if (Nvs_Read_Number("mb2_parity", &val)) g_mb2_parity = (uint8_t)val;
-    if (Nvs_Read_Number("mb2_stop", &val)) g_mb2_stop = (uint8_t)val;
+    if (Nvs_Read_Number("mb2_addr", &val)) {
+        g_mb2_addr = (uint8_t)val;
+    }
+    if (Nvs_Read_Number("mb2_baud", &val)) {
+        g_mb2_baud = val;
+    }
+    if (Nvs_Read_Number("mb2_parity", &val)) {
+        g_mb2_parity = (uint8_t)val;
+    }
+    if (Nvs_Read_Number("mb2_stop", &val)) {
+        g_mb2_stop = (uint8_t)val;
+    }
 
     ESP_LOGI("DO_SENSOR", "Loaded MB Port 1: Addr=%d, Baud=%lu, Parity=%d, Stop=%d",
              g_mb1_addr, (unsigned long)g_mb1_baud, g_mb1_parity, g_mb1_stop);
@@ -96,7 +114,8 @@ static const uint8_t crc_table_high[] = {
     0x44, 0x84, 0x85, 0x45, 0x87, 0x47, 0x46, 0x86, 0x82, 0x42, 0x43, 0x83, 0x41, 0x81, 0x80, 0x40
 };
 
-static uint16_t modbus_crc16(const uint8_t *data, size_t len) {
+static uint16_t modbus_crc16(const uint8_t *data, size_t len)
+{
     uint8_t crc_hi = 0xFF; /* Byte cao khởi tạo */
     uint8_t crc_lo = 0xFF; /* Byte thấp khởi tạo */
     uint8_t index;
@@ -111,7 +130,8 @@ static uint16_t modbus_crc16(const uint8_t *data, size_t len) {
 }
 
 static void log_hex_line(const char *label, const uint8_t *data, int len,
-                         bool enable) {
+                         bool enable)
+{
   if (!enable || len <= 0) {
     return;
   }
@@ -124,13 +144,15 @@ static void log_hex_line(const char *label, const uint8_t *data, int len,
   ESP_LOGI(TAG, "%s (%d): %s", label, len, buf);
 }
 
-static void rs485_set_tx(bool tx) {
+static void rs485_set_tx(bool tx)
+{
   if (s_cfg.rs485_mode == DO_SENSOR_RS485_MANUAL_DE) {
     gpio_set_level(s_cfg.pin_de, tx ? 1 : 0);
   }
 }
 
-static esp_err_t rs485_gpio_init(void) {
+static esp_err_t rs485_gpio_init(void)
+{
   if (s_cfg.rs485_mode != DO_SENSOR_RS485_MANUAL_DE) {
     return ESP_OK;
   }
@@ -147,7 +169,8 @@ static esp_err_t rs485_gpio_init(void) {
   return ESP_OK;
 }
 
-static esp_err_t uart_rs485_init(void) {
+static esp_err_t uart_rs485_init(void)
+{
   uart_config_t cfg = {
       .baud_rate = (int)s_cfg.baud_rate,
       .data_bits = UART_DATA_8_BITS,
@@ -189,7 +212,8 @@ static esp_err_t uart_rs485_init(void) {
 }
 
 static int modbus_read_regs(uint8_t slave, uint8_t function, uint16_t start_reg,
-                            uint16_t count, uint16_t *out_regs) {
+                            uint16_t count, uint16_t *out_regs)
+{
   uint8_t req[8];
 
   req[0] = slave;
@@ -277,14 +301,16 @@ static int modbus_read_regs(uint8_t slave, uint8_t function, uint16_t start_reg,
   return 0;
 }
 
-static float regs_to_float(uint16_t hi, uint16_t lo) {
+static float regs_to_float(uint16_t hi, uint16_t lo)
+{
   uint32_t raw = ((uint32_t)hi << 16) | lo;
   float value;
   memcpy(&value, &raw, sizeof(value));
   return value;
 }
 
-static float scale_by_decimals(uint16_t raw, uint16_t decimals) {
+static float scale_by_decimals(uint16_t raw, uint16_t decimals)
+{
   if (decimals > 4) {
     decimals = 4;
   }
@@ -295,7 +321,8 @@ static float scale_by_decimals(uint16_t raw, uint16_t decimals) {
   return raw / div;
 }
 
-static int modbus_write_reg(uint8_t slave, uint16_t reg, uint16_t value) {
+static int modbus_write_reg(uint8_t slave, uint16_t reg, uint16_t value)
+{
   uint8_t req[8];
 
   req[0] = slave;
@@ -415,7 +442,8 @@ static int modbus_write_reg(uint8_t slave, uint16_t reg, uint16_t value) {
 }
 
 static bool modbus_read_block(uint16_t start, uint16_t count, uint16_t *regs,
-                              int *err) {
+                              int *err)
+{
   *err = modbus_read_regs(s_cfg.slave_id, 0x03, start, count, regs);
   if (*err != 0) {
     *err = modbus_read_regs(s_cfg.slave_id, 0x04, start, count, regs);
@@ -423,7 +451,8 @@ static bool modbus_read_block(uint16_t start, uint16_t count, uint16_t *regs,
   return *err == 0;
 }
 
-static bool modbus_read_one(uint16_t addr, uint16_t *val, int *err) {
+static bool modbus_read_one(uint16_t addr, uint16_t *val, int *err)
+{
   *err = modbus_read_regs(s_cfg.slave_id, 0x03, addr, 1, val);
   if (*err != 0) {
     *err = modbus_read_regs(s_cfg.slave_id, 0x04, addr, 1, val);
@@ -431,7 +460,8 @@ static bool modbus_read_one(uint16_t addr, uint16_t *val, int *err) {
   return *err == 0;
 }
 
-static bool read_kog206_meas(uint16_t meas[4], int *err) {
+static bool read_kog206_meas(uint16_t meas[4], int *err)
+{
   if (modbus_read_block(0x0000, 4, meas, err)) {
     return true;
   }
@@ -447,7 +477,8 @@ static bool read_kog206_meas(uint16_t meas[4], int *err) {
 }
 
 static bool read_kog206(float *do_mg_l, float *temp_c, float *sat_pct,
-                        int *err) {
+                        int *err)
+{
   uint16_t meas[4] = {0};
 
   /* Manual KOG-206: đọc 4 reg từ 0x0000 (40001)
@@ -485,7 +516,8 @@ static bool read_kog206(float *do_mg_l, float *temp_c, float *sat_pct,
   return true;
 }
 
-esp_err_t do_sensor_kog206_boot(void) {
+esp_err_t do_sensor_kog206_boot(void)
+{
   if (!s_initialized) {
     return ESP_ERR_INVALID_STATE;
   }
@@ -499,8 +531,8 @@ esp_err_t do_sensor_kog206_boot(void) {
   return ESP_OK;
 }
 
-static __attribute__((unused)) bool read_sensor_once(float *do_mg_l, float *temp_c, float *sat_pct,
-                             int *err) {
+static __attribute__((unused)) bool read_sensor_once(float *do_mg_l, float *temp_c, float *sat_pct, int *err)
+{
   uint16_t regs[6] = {0};
   int e;
 
@@ -539,7 +571,8 @@ static __attribute__((unused)) bool read_sensor_once(float *do_mg_l, float *temp
   return true;
 }
 
-static void publish_reading(const do_sensor_reading_t *reading) {
+static void publish_reading(const do_sensor_reading_t *reading)
+{
   if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
     s_latest = *reading;
     xSemaphoreGive(s_mutex);
@@ -555,13 +588,14 @@ static void publish_reading(const do_sensor_reading_t *reading) {
   }
 }
 
-static void do_sensor_task(void *arg) {
+static void do_sensor_task(void *arg)
+{
   (void)arg;
 
   ESP_LOGI(TAG, "task started: id=%u baud=%" PRIu32 " de=GPIO%d mode=%s",
-           s_cfg.slave_id, s_cfg.baud_rate, s_cfg.pin_de,
-           s_cfg.rs485_mode == DO_SENSOR_RS485_MANUAL_DE ? "manual"
-                                                         : "uart_rts");
+  s_cfg.slave_id, s_cfg.baud_rate, s_cfg.pin_de,
+  s_cfg.rs485_mode == DO_SENSOR_RS485_MANUAL_DE ? "manual"
+                                                 : "uart_rts");
 
     // =========================================================================
     // CODE MÔ PHỎNG SENSOR DO MODBUS (HIỂN THỊ NGẪU NHIÊN 5 GIÁ TRỊ)
@@ -645,7 +679,8 @@ static void do_sensor_task(void *arg) {
 #endif
 }
 
-const char *do_sensor_error_str(int error_code) {
+const char *do_sensor_error_str(int error_code)
+{
   switch (error_code) {
   case -1:
     return "uart write failed";
@@ -670,7 +705,8 @@ const char *do_sensor_error_str(int error_code) {
   }
 }
 
-esp_err_t do_sensor_probe(void) {
+esp_err_t do_sensor_probe(void)
+{
   if (!s_initialized) {
     return ESP_ERR_INVALID_STATE;
   }
@@ -701,17 +737,15 @@ esp_err_t do_sensor_probe(void) {
           continue;
         }
       }
-      {
-        s_cfg.slave_id = id;
-        s_cfg.baud_rate = baud_list[b];
-        uart_set_baudrate(s_cfg.uart_port, s_cfg.baud_rate);
-        ESP_LOGI(TAG, "FOUND: id=%u baud=%" PRIu32 " DO=%.2f mg/L temp=%.1f C",
-                 id, baud_list[b], scale_by_decimals(regs[0], regs[1]),
-                 scale_by_decimals(regs[2], regs[3]));
-        ESP_LOGI(TAG, "auto-applied slave_id=%u baud=%" PRIu32, s_cfg.slave_id,
-                 s_cfg.baud_rate);
-        return ESP_OK;
-      }
+      s_cfg.slave_id = id;
+      s_cfg.baud_rate = baud_list[b];
+      uart_set_baudrate(s_cfg.uart_port, s_cfg.baud_rate);
+      ESP_LOGI(TAG, "FOUND: id=%u baud=%" PRIu32 " DO=%.2f mg/L temp=%.1f C",
+                id, baud_list[b], scale_by_decimals(regs[0], regs[1]),
+                scale_by_decimals(regs[2], regs[3]));
+      ESP_LOGI(TAG, "auto-applied slave_id=%u baud=%" PRIu32, s_cfg.slave_id,
+                s_cfg.baud_rate);
+      return ESP_OK;
     }
   }
 
@@ -720,7 +754,8 @@ esp_err_t do_sensor_probe(void) {
   return ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t do_sensor_dump_registers(void) {
+esp_err_t do_sensor_dump_registers(void)
+{
   if (!s_initialized) {
     return ESP_ERR_INVALID_STATE;
   }
@@ -747,7 +782,8 @@ esp_err_t do_sensor_dump_registers(void) {
   return ESP_OK;
 }
 
-esp_err_t do_sensor_init(const do_sensor_config_t *config) {
+esp_err_t do_sensor_init(const do_sensor_config_t *config)
+{
   if (config == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -762,7 +798,6 @@ esp_err_t do_sensor_init(const do_sensor_config_t *config) {
   }
 
   memset(&s_latest, 0, sizeof(s_latest));
-  
   if (s_cfg.parity != UART_PARITY_DISABLE && s_cfg.parity != UART_PARITY_EVEN && s_cfg.parity != UART_PARITY_ODD) {
       s_cfg.parity = UART_PARITY_DISABLE;
   }
@@ -781,37 +816,46 @@ esp_err_t do_sensor_init(const do_sensor_config_t *config) {
   return ESP_OK;
 }
 
-esp_err_t do_sensor_update_config(uint8_t slave_id, uint32_t baud_rate, uint8_t parity_val, uint8_t stop_val) {
-    if (!s_initialized) return ESP_ERR_INVALID_STATE;
-    
+esp_err_t do_sensor_update_config(uint8_t slave_id, uint32_t baud_rate, uint8_t parity_val, uint8_t stop_val)
+{
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_FAIL;
     }
-    
+
     s_cfg.slave_id = slave_id;
     s_cfg.baud_rate = baud_rate;
-    
+
     uart_parity_t uart_parity = UART_PARITY_DISABLE;
-    if (parity_val == 1) uart_parity = UART_PARITY_EVEN;
-    else if (parity_val == 2) uart_parity = UART_PARITY_ODD;
+    if (parity_val == 1) {
+        uart_parity = UART_PARITY_EVEN;
+    } else if (parity_val == 2) {
+        uart_parity = UART_PARITY_ODD;
+    }
     s_cfg.parity = uart_parity;
-    
+
     uart_stop_bits_t uart_stop = UART_STOP_BITS_1;
-    if (stop_val == 2) uart_stop = UART_STOP_BITS_2;
+    if (stop_val == 2) {
+        uart_stop = UART_STOP_BITS_2;
+    }
     s_cfg.stop_bits = uart_stop;
-    
+
     uart_set_baudrate(s_cfg.uart_port, baud_rate);
     uart_set_parity(s_cfg.uart_port, uart_parity);
     uart_set_stop_bits(s_cfg.uart_port, uart_stop);
-    
+
     xSemaphoreGive(s_mutex);
     ESP_LOGI(TAG, "Config updated: slave_id=%d, baud=%lu, parity=%d, stop_bits=%d",
              slave_id, (unsigned long)baud_rate, (int)uart_parity, (int)uart_stop);
-             
+
     return ESP_OK;
 }
 
-esp_err_t do_sensor_start(do_sensor_callback_t callback, void *user_ctx) {
+esp_err_t do_sensor_start(do_sensor_callback_t callback, void *user_ctx)
+{
   if (!s_initialized) {
     return ESP_ERR_INVALID_STATE;
   }
@@ -832,7 +876,8 @@ esp_err_t do_sensor_start(do_sensor_callback_t callback, void *user_ctx) {
   return ESP_OK;
 }
 
-esp_err_t do_sensor_stop(void) {
+esp_err_t do_sensor_stop(void)
+{
   if (s_task_handle == NULL) {
     return ESP_ERR_INVALID_STATE;
   }
@@ -844,7 +889,8 @@ esp_err_t do_sensor_stop(void) {
   return ESP_OK;
 }
 
-esp_err_t do_sensor_get_reading(do_sensor_reading_t *out) {
+esp_err_t do_sensor_get_reading(do_sensor_reading_t *out)
+{
   if (out == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -860,16 +906,20 @@ esp_err_t do_sensor_get_reading(do_sensor_reading_t *out) {
   return ESP_OK;
 }
 
-bool do_sensor_is_running(void) { return s_task_handle != NULL; }
+bool do_sensor_is_running(void)
+{
+    return s_task_handle != NULL;
+}
 
 
-esp_err_t do_sensor_calibrate_zero(void){
-    if(!s_initialized){
+esp_err_t do_sensor_calibrate_zero(void)
+{
+    if (!s_initialized) {
         ESP_LOGE(TAG, "Lỗi: Cảm biến DO chưa được khởi tạo!");
         return ESP_ERR_INVALID_STATE;
     }
     // Bảo vệ tài nguyên UART bằng Mutex để tránh xung đột với task đọc cảm biến định kỳ
-    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE){
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "Bắt đầu gửi lệnh hiệu chuẩn điểm 0 (Zero Calibration) đến DO Sensor (Slave: %d)", s_cfg.slave_id);
@@ -877,7 +927,7 @@ esp_err_t do_sensor_calibrate_zero(void){
     int err = modbus_write_reg(s_cfg.slave_id, 0x1000, 0x0000);
     xSemaphoreGive(s_mutex);
 
-    if(err != 0){
+    if (err != 0) {
         ESP_LOGE(TAG, "Lưu hiệu chuẩn điểm 0 thất bại: %s (%d)", do_sensor_error_str(err), err);
         return ESP_FAIL;
     }
@@ -886,22 +936,23 @@ esp_err_t do_sensor_calibrate_zero(void){
     return ESP_OK;
 }
 
-esp_err_t do_sensor_calibrate_slope(void){
-  if(!s_initialized){
-    ESP_LOGE(TAG, "Lỗi: Cảm biến DO chưa được khởi tạo!");
-    return ESP_ERR_INVALID_STATE;
-  }
+esp_err_t do_sensor_calibrate_slope(void)
+{
+    if (!s_initialized) {
+        ESP_LOGE(TAG, "Lỗi: Cảm biến DO chưa được khởi tạo!");
+        return ESP_ERR_INVALID_STATE;
+    }
 
-  if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE){
-    return ESP_FAIL;
-  }
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_FAIL;
+    }
 
-  ESP_LOGI(TAG, "Bắt đầu gửi lệnh hiệu chuẩn độ dốc (Slope Calibration) đến DO Sensor (Slave: %d)", s_cfg.slave_id);
+    ESP_LOGI(TAG, "Bắt đầu gửi lệnh hiệu chuẩn độ dốc (Slope Calibration) đến DO Sensor (Slave: %d)", s_cfg.slave_id);
 
-  int err = modbus_write_reg(s_cfg.slave_id, 0x1004, 0x0000);
-  xSemaphoreGive(s_mutex);
+    int err = modbus_write_reg(s_cfg.slave_id, 0x1004, 0x0000);
+    xSemaphoreGive(s_mutex);
 
-  if(err != 0){
+    if (err != 0) {
         ESP_LOGE(TAG, "Lưu hiệu chuẩn độ dốc thất bại: %s (%d)", do_sensor_error_str(err), err);
         return ESP_FAIL;
     }
@@ -910,24 +961,25 @@ esp_err_t do_sensor_calibrate_slope(void){
     return ESP_OK;
 }
 
-esp_err_t do_sensor_correct_temp(float standard_temp_c){
-  if(!s_initialized){
-    ESP_LOGE(TAG, "Lỗi: Cảm biến DO chưa được khởi tạo!");
-    return ESP_ERR_INVALID_STATE;
-  }
-  // Chuyển đổi sang giá trị ghi (Nhiệt độ x 10), làm tròn số nguyên gần nhất
-  int16_t modbus_val = (int16_t) (standard_temp_c * 10.0f + (standard_temp_c > 0.0f ? 0.5f : -0.5f));
+esp_err_t do_sensor_correct_temp(float standard_temp_c)
+{
+    if (!s_initialized) {
+        ESP_LOGE(TAG, "Lỗi: Cảm biến DO chưa được khởi tạo!");
+        return ESP_ERR_INVALID_STATE;
+    }
+    // Chuyển đổi sang giá trị ghi (Nhiệt độ x 10), làm tròn số nguyên gần nhất
+    int16_t modbus_val = (int16_t) (standard_temp_c * 10.0f + (standard_temp_c > 0.0f ? 0.5f : -0.5f));
 
-  if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE){
-    return ESP_FAIL;
-  }
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_FAIL;
+    }
 
-  ESP_LOGI(TAG, "Bắt đầu gửi lệnh hiệu chỉnh nhiệt độ đến DO Sensor (Slave: %d, value: %d)", s_cfg.slave_id, modbus_val);
+    ESP_LOGI(TAG, "Bắt đầu gửi lệnh hiệu chỉnh nhiệt độ đến DO Sensor (Slave: %d, value: %d)", s_cfg.slave_id, modbus_val);
 
-  int err = modbus_write_reg(s_cfg.slave_id, 0x1010, (uint16_t)modbus_val);
-  xSemaphoreGive(s_mutex);
+    int err = modbus_write_reg(s_cfg.slave_id, 0x1010, (uint16_t)modbus_val);
+    xSemaphoreGive(s_mutex);
 
-  if(err != 0){
+    if (err != 0) {
         ESP_LOGE(TAG, "Lưu hiệu chuẩn nhiệt độ thất bại: %s (%d)", do_sensor_error_str(err), err);
         return ESP_FAIL;
     }
@@ -936,63 +988,66 @@ esp_err_t do_sensor_correct_temp(float standard_temp_c){
     return ESP_OK;
 }
 
-esp_err_t do_sensor_reset(void){
-    if(!s_initialized){
-    ESP_LOGE(TAG, "Lỗi: Cảm biến DO chưa được khởi tạo!");
-    return ESP_ERR_INVALID_STATE;
-  }
+esp_err_t do_sensor_reset(void)
+{
+    if (!s_initialized) {
+        ESP_LOGE(TAG, "Lỗi: Cảm biến DO chưa được khởi tạo!");
+        return ESP_ERR_INVALID_STATE;
+    }
 
-  if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE){
-    return ESP_FAIL;
-  }
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_FAIL;
+    }
 
-  ESP_LOGI(TAG, "Bắt đầu gửi lệnh khôi phục cài đặt gốc đến DO Sensor (Slave: %d)", s_cfg.slave_id);
+    ESP_LOGI(TAG, "Bắt đầu gửi lệnh khôi phục cài đặt gốc đến DO Sensor (Slave: %d)", s_cfg.slave_id);
 
-  // Ghi giá trị 0 vào thanh ghi 0x2020
+    // Ghi giá trị 0 vào thanh ghi 0x2020
     int err = modbus_write_reg(s_cfg.slave_id, 0x2020, 0x0000);
     xSemaphoreGive(s_mutex);
-    if(err != 0){
+    if (err != 0) {
         ESP_LOGE(TAG, "Khôi phục cài đặt gốc thất bại: %s (%d)", do_sensor_error_str(err), err);
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "Khôi phục cài đặt gốc cảm biến DO thành công!");
     return ESP_OK;
 }
-esp_err_t do_sensor_set_salinity(float salinity_psu){
-  if (!s_initialized){
-    ESP_LOGE(TAG, "Lỗi: Cảm biến DO chưa được khởi tạo");
-    return ESP_ERR_INVALID_STATE;
-  }
 
-  // Bước 1: Kiểm tra giới hạn độ mặn đầu vào hợp lệ
-  if (salinity_psu < 0.0f || salinity_psu > 100.0f){
-    ESP_LOGE(TAG, "Lỗi: Giá trị độ mặn %.1f PSU nằm ngoài khoảng cho phép (0 - 100)!", salinity_psu);
-    return ESP_ERR_INVALID_ARG;
-  }
+esp_err_t do_sensor_set_salinity(float salinity_psu)
+{
+    if (!s_initialized) {
+        ESP_LOGE(TAG, "Lỗi: Cảm biến DO chưa được khởi tạo");
+        return ESP_ERR_INVALID_STATE;
+    }
 
-  // Bước 2: Nhân với 10 làm tròn về số nguyên gần nhất (ép kiểu uint16_t để ghi modbus)
-  uint16_t modbus_val = (uint16_t)(salinity_psu * 10.0f + 0.5f);
+    // Bước 1: Kiểm tra giới hạn độ mặn đầu vào hợp lệ
+    if (salinity_psu < 0.0f || salinity_psu > 100.0f) {
+        ESP_LOGE(TAG, "Lỗi: Giá trị độ mặn %.1f PSU nằm ngoài khoảng cho phép (0 - 100)!", salinity_psu);
+        return ESP_ERR_INVALID_ARG;
+    }
 
-  // Lock mutex bảo vệ tài nguyên UART
-  if(xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE){
-    return ESP_FAIL;
-  }
+    // Bước 2: Nhân với 10 làm tròn về số nguyên gần nhất (ép kiểu uint16_t để ghi modbus)
+    uint16_t modbus_val = (uint16_t)(salinity_psu * 10.0f + 0.5f);
 
-  ESP_LOGI(TAG, "Gửi lệnh bù độ mặn đến DO Sensor (Slave ID: %d, Register: 0x1020, Value: %d)", 
+    // Lock mutex bảo vệ tài nguyên UART
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Gửi lệnh bù độ mặn đến DO Sensor (Slave ID: %d, Register: 0x1020, Value: %d)",
              s_cfg.slave_id, modbus_val);
 
-  // Bước 3: Gọi hàm ghi Modbus ghi single register (Function code 06)
-  int err = modbus_write_reg(s_cfg.slave_id, 0x1020, modbus_val);
+    // Bước 3: Gọi hàm ghi Modbus ghi single register (Function code 06)
+    int err = modbus_write_reg(s_cfg.slave_id, 0x1020, modbus_val);
 
-  xSemaphoreGive(s_mutex);
+    xSemaphoreGive(s_mutex);
 
-  if (err != 0){
-    ESP_LOGE(TAG, "Bù độ mặn thất bại: %s (%d)", do_sensor_error_str(err), err);
-    return ESP_FAIL;
-  }
+    if (err != 0) {
+        ESP_LOGE(TAG, "Bù độ mặn thất bại: %s (%d)", do_sensor_error_str(err), err);
+        return ESP_FAIL;
+    }
 
-  ESP_LOGI(TAG, "Cấu hình bù độ mặn cảm biến DO thành công!");
-  return ESP_OK;
+    ESP_LOGI(TAG, "Cấu hình bù độ mặn cảm biến DO thành công!");
+    return ESP_OK;
 }
 
 

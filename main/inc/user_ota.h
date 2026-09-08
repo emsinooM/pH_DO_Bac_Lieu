@@ -1,15 +1,20 @@
 #pragma once
 
-#include "esp_https_ota.h"
+#include <stdbool.h>
+
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/projdefs.h"
 #include "freertos/task.h"
-#include "freertos/event_groups.h"
 
-#define OTA_WAIT_BIT   (1<<0)
+#include "esp_err.h"
+#include "esp_https_ota.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-
+#define OTA_WAIT_BIT   (1 << 0)
 
 extern EventGroupHandle_t otaEventGroup;
 extern char g_ota_update_url[512];
@@ -25,11 +30,15 @@ typedef enum {
 extern user_ota_status_t g_ota_status;
 extern char g_ota_err_desc[64];
 
-const char* User_Ota_Get_Status_String(void);
+const char *User_Ota_Get_Status_String(void);
 
 void User_Ota_Task(void *pvParameters);
 esp_err_t update_firmware(const char *updateFileName);
 void User_Ota_Trigger(const char *url);
 bool User_Ota_Check_And_Run_Pending(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 

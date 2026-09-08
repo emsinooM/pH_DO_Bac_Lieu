@@ -20,12 +20,16 @@
  *  Controller: ST7565 (tương thích SED1565 / KS0107B / KS0108B)
  */
 
-#ifndef MODULE_MAN_HINH_CAM_BIEN_H
-#define MODULE_MAN_HINH_CAM_BIEN_H
+#pragma once
 
-#include <stdint.h>
 #include <stdbool.h>
-#include <Font.h>
+#include <stdint.h>
+
+#include "Font.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* =====================================================================
  * Kích thước vật lý màn hình
@@ -295,4 +299,6 @@ void LCD_Pin_Diagnostics(void);
 extern uint8_t g_lcd_contrast;
 extern volatile bool g_lcd_need_redraw;
 
-#endif /* MODULE_MAN_HINH_CAM_BIEN_H */
+#ifdef __cplusplus
+}
+#endif
