@@ -1,0 +1,19 @@
+{
+  "idf.currentSetup": "D:\\Study\\STUdied\\Mebi\\.espressif\\v5.3.4\\esp-idf",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "cmake.sourceDirectory": "C:/esp/RFID/main",
+  "idf.flashType": "UART",
+  "idf.portWin": "COM9",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "C_Cpp_Runner.msvcBatchPath": "",
+  "clangd.arguments": [
+    "--compile-commands-dir=build",
+    "--query-driver=C:/Espressif/tools/**/bin/*gcc*,C:/Espressif/tools/**/bin/*g++*",
+    "--header-insertion=never",
+    "--background-index"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "configurations": [
+    {
+      "name": "ESP-IDF",
+      "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "D:/Study/STUdied/Mebi/.espressif/v5.3.4/esp-idf/components/**"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}",
+          "D:/Study/STUdied/Mebi/.espressif/v5.3.4/esp-idf/components"
+        ],
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "gcc-arm"
+    }
+  ],
+  "version": 4
+}

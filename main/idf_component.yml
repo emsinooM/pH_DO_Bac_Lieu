@@ -1,0 +1,5 @@
+dependencies:
+  espressif/cjson: ^1.7.0
+  idf: '>=4.4.1'
+  espressif/mdns: '*'
+  espressif/esp-modbus: '*'
